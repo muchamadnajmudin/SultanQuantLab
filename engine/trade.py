@@ -2,7 +2,7 @@
 ==========================================
 Sultan Quant Lab
 Trade Object
-Version : 2.1
+Version : 2.2
 ==========================================
 """
 
@@ -19,6 +19,8 @@ class Trade:
 
     direction: str
     entry_time: datetime
+
+    trade_number: int = 0
 
     # =====================================================
     # SYMBOL
@@ -62,8 +64,24 @@ class Trade:
     # =====================================================
 
     profit: float = 0.0
-
     profit_percent: float = 0.0
+
+    duration: float = 0.0
+
+    # =====================================================
+    # ENTRY INDICATORS
+    # =====================================================
+
+    atr: float = 0.0
+    adx: float = 0.0
+    rsi: float = 0.0
+
+    ema20: float = 0.0
+    ema50: float = 0.0
+    ema200: float = 0.0
+
+    stoch_k: float = 0.0
+    stoch_d: float = 0.0
 
     # =====================================================
     # STATUS
@@ -78,5 +96,4 @@ class Trade:
     # =====================================================
 
     score: float = 0.0
-
     confidence: float = 0.0

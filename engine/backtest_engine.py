@@ -2,7 +2,7 @@
 ==========================================
 Sultan Quant Lab
 Module : Backtest Engine
-Version : 2.0
+Version : 2.2
 ==========================================
 """
 
@@ -19,10 +19,10 @@ def run_backtest(df):
 
     current_trade = None
 
+    trade_number = 1
+
     total_rows = len(df)
 
-    # mulai dari candle ke-1
-    # karena entry menggunakan OPEN candle berikutnya
     for i in range(total_rows - 1):
 
         candle = df.iloc[i]
@@ -46,11 +46,25 @@ def run_backtest(df):
                 )
 
                 current_trade = Trade(
+                    trade_number=trade_number,
                     direction="BUY",
+
                     entry_time=next_candle["time"],
                     entry_price=entry_price,
+
                     stop_loss=sl,
                     take_profit=tp,
+
+                    atr=float(candle["ATR"]),
+                    adx=float(candle["ADX"]),
+                    rsi=float(candle["RSI"]),
+
+                    ema20=float(candle["EMA20"]),
+                    ema50=float(candle["EMA50"]),
+                    ema200=float(candle["EMA200"]),
+
+                    stoch_k=float(candle["%K"]),
+                    stoch_d=float(candle["%D"]),
                 )
 
             # ---------------- SELL ----------------
@@ -65,11 +79,25 @@ def run_backtest(df):
                 )
 
                 current_trade = Trade(
+                    trade_number=trade_number,
                     direction="SELL",
+
                     entry_time=next_candle["time"],
                     entry_price=entry_price,
+
                     stop_loss=sl,
                     take_profit=tp,
+
+                    atr=float(candle["ATR"]),
+                    adx=float(candle["ADX"]),
+                    rsi=float(candle["RSI"]),
+
+                    ema20=float(candle["EMA20"]),
+                    ema50=float(candle["EMA50"]),
+                    ema200=float(candle["EMA200"]),
+
+                    stoch_k=float(candle["%K"]),
+                    stoch_d=float(candle["%D"]),
                 )
 
         # ==========================================
@@ -78,18 +106,15 @@ def run_backtest(df):
 
         else:
 
-            # ======================================
-            # BUY
-            # ======================================
-
             if current_trade.direction == "BUY":
 
-                # Stop Loss
+                # STOP LOSS
 
                 if candle["low"] <= current_trade.stop_loss:
 
                     current_trade.exit_time = candle["time"]
                     current_trade.exit_price = current_trade.stop_loss
+
                     current_trade.profit = (
                         current_trade.exit_price
                         - current_trade.entry_price
@@ -98,16 +123,23 @@ def run_backtest(df):
                     current_trade.status = "CLOSED"
                     current_trade.exit_reason = "SL"
 
+                    current_trade.duration = (
+                        current_trade.exit_time
+                        - current_trade.entry_time
+                    ).total_seconds()
+
                     trades.append(current_trade)
 
+                    trade_number += 1
                     current_trade = None
 
-                # Take Profit
+                # TAKE PROFIT
 
                 elif candle["high"] >= current_trade.take_profit:
 
                     current_trade.exit_time = candle["time"]
                     current_trade.exit_price = current_trade.take_profit
+
                     current_trade.profit = (
                         current_trade.exit_price
                         - current_trade.entry_price
@@ -116,22 +148,25 @@ def run_backtest(df):
                     current_trade.status = "CLOSED"
                     current_trade.exit_reason = "TP"
 
+                    current_trade.duration = (
+                        current_trade.exit_time
+                        - current_trade.entry_time
+                    ).total_seconds()
+
                     trades.append(current_trade)
 
+                    trade_number += 1
                     current_trade = None
-
-            # ======================================
-            # SELL
-            # ======================================
 
             else:
 
-                # Stop Loss
+                # STOP LOSS
 
                 if candle["high"] >= current_trade.stop_loss:
 
                     current_trade.exit_time = candle["time"]
                     current_trade.exit_price = current_trade.stop_loss
+
                     current_trade.profit = (
                         current_trade.entry_price
                         - current_trade.exit_price
@@ -140,16 +175,23 @@ def run_backtest(df):
                     current_trade.status = "CLOSED"
                     current_trade.exit_reason = "SL"
 
+                    current_trade.duration = (
+                        current_trade.exit_time
+                        - current_trade.entry_time
+                    ).total_seconds()
+
                     trades.append(current_trade)
 
+                    trade_number += 1
                     current_trade = None
 
-                # Take Profit
+                # TAKE PROFIT
 
                 elif candle["low"] <= current_trade.take_profit:
 
                     current_trade.exit_time = candle["time"]
                     current_trade.exit_price = current_trade.take_profit
+
                     current_trade.profit = (
                         current_trade.entry_price
                         - current_trade.exit_price
@@ -158,8 +200,14 @@ def run_backtest(df):
                     current_trade.status = "CLOSED"
                     current_trade.exit_reason = "TP"
 
+                    current_trade.duration = (
+                        current_trade.exit_time
+                        - current_trade.entry_time
+                    ).total_seconds()
+
                     trades.append(current_trade)
 
+                    trade_number += 1
                     current_trade = None
 
     return trades
