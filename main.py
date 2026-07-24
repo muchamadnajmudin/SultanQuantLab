@@ -2,7 +2,7 @@
 ==========================================
 SULTAN QUANT OS
 Main Pipeline
-Version : 2.4.1
+Version : 2.5.0
 ==========================================
 """
 
@@ -16,18 +16,33 @@ from engine.strategy_engine import run_strategy
 from engine.backtest_engine import run_backtest
 from engine.statistics_engine import calculate_statistics
 from engine.trade_logger import save_trade_journal
+from engine.visual_engine import generate_visual_reports
 
 from reports.report_engine import generate_report
 from reports.report_writer import save_report
+
 
 
 # =====================================================
 # CONSTANT
 # =====================================================
 
-REPORT_DIR = Path("reports/output")
-REPORT_FILE = REPORT_DIR / "backtest_report.txt"
-TRADE_JOURNAL = REPORT_DIR / "trade_journal.csv"
+REPORT_DIR = Path(
+    "reports/output"
+)
+
+
+REPORT_FILE = (
+    REPORT_DIR /
+    "backtest_report.txt"
+)
+
+
+TRADE_JOURNAL = (
+    REPORT_DIR /
+    "trade_journal.csv"
+)
+
 
 
 # =====================================================
@@ -42,6 +57,7 @@ def print_header():
     print()
 
 
+
 def print_statistics(stats: dict):
 
     print()
@@ -49,15 +65,29 @@ def print_statistics(stats: dict):
     print("BACKTEST RESULT")
     print("=" * 50)
 
+
     for key, value in stats.items():
 
-        # Tidak tampilkan equity curve di console
-        if key == "equity_curve":
+
+        if key in [
+
+            "equity_curve",
+
+            "drawdown_curve"
+
+        ]:
+
             continue
 
-        print(f"{key:20}: {value}")
+
+
+        print(
+            f"{key:20}: {value}"
+        )
+
 
     print("=" * 50)
+
 
 
 # =====================================================
@@ -66,10 +96,17 @@ def print_statistics(stats: dict):
 
 def main():
 
-    # Pastikan folder output tersedia
-    REPORT_DIR.mkdir(parents=True, exist_ok=True)
+
+    REPORT_DIR.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+
 
     print_header()
+
+
 
     # -------------------------------------
     # LOAD DATA
@@ -77,98 +114,227 @@ def main():
 
     print("Loading Data...")
 
+
     df = load_data(
         "data/XAUUSDc_M1.csv"
     )
 
+
     print("[OK] Data Loaded")
+
+
 
     # -------------------------------------
     # INDICATORS
     # -------------------------------------
 
     print()
-    print("Calculating Indicators...")
+
+    print(
+        "Calculating Indicators..."
+    )
+
 
     df = calculate_indicators(df)
 
-    print("[OK] Indicator Done")
+
+    print(
+        "[OK] Indicator Done"
+    )
+
+
 
     # -------------------------------------
     # STRATEGY
     # -------------------------------------
 
     print()
-    print("Running Strategy...")
 
-    df = run_strategy(
-        df,
-        strategy=DEFAULT_STRATEGY,
+    print(
+        "Running Strategy..."
     )
 
-    print("[OK] Strategy Done")
+
+    df = run_strategy(
+
+        df,
+
+        strategy=DEFAULT_STRATEGY,
+
+    )
+
+
+    print(
+        "[OK] Strategy Done"
+    )
+
+
 
     # -------------------------------------
     # BACKTEST
     # -------------------------------------
 
     print()
-    print("Running Backtest...")
+
+    print(
+        "Running Backtest..."
+    )
+
 
     trades = run_backtest(df)
 
-    print("[OK] Backtest Done")
+
+    print(
+        "[OK] Backtest Done"
+    )
+
+
 
     # -------------------------------------
     # STATISTICS
     # -------------------------------------
 
     print()
-    print("Generating Statistics...")
 
-    stats = calculate_statistics(trades)
+    print(
+        "Generating Statistics..."
+    )
 
-    print("[OK] Statistics Done")
+
+    stats = calculate_statistics(
+        trades
+    )
+
+
+    print(
+        "[OK] Statistics Done"
+    )
+
+
 
     # -------------------------------------
     # PRINT RESULT
     # -------------------------------------
 
-    print_statistics(stats)
+    print_statistics(
+        stats
+    )
+
+
 
     # -------------------------------------
     # SAVE REPORT
     # -------------------------------------
 
     print()
-    print("Saving Report...")
 
-    report = generate_report(stats)
+    print(
+        "Saving Report..."
+    )
+
+
+    report = generate_report(
+        stats
+    )
+
 
     save_report(
+
         report,
+
         str(REPORT_FILE),
+
     )
 
-    print("[OK] Report Saved")
+
+    print(
+        "[OK] Report Saved"
+    )
+
+
 
     # -------------------------------------
-    # SAVE TRADE JOURNAL
+    # TRADE JOURNAL
     # -------------------------------------
 
     print()
-    print("Saving Trade Journal...")
+
+    print(
+        "Saving Trade Journal..."
+    )
+
 
     save_trade_journal(
+
         trades,
+
         str(TRADE_JOURNAL),
+
     )
 
-    print("[OK] Trade Journal Saved")
+
+    print(
+        "[OK] Trade Journal Saved"
+    )
+
+
+
+    # -------------------------------------
+    # VISUAL ANALYTICS
+    # -------------------------------------
 
     print()
-    print(f"Report Location : {REPORT_FILE}")
-    print(f"Trade Journal   : {TRADE_JOURNAL}")
+
+    print(
+        "Generating Visual Analytics..."
+    )
+
+
+    visual_files = generate_visual_reports(
+
+        stats,
+
+        trades
+
+    )
+
+
+    print(
+        "[OK] Visual Reports Generated"
+    )
+
+
+
+    for file in visual_files:
+
+        print(
+            f" - {file}"
+        )
+
+
+
+    # -------------------------------------
+    # FINAL LOCATION
+    # -------------------------------------
+
+    print()
+
+    print(
+        f"Report Location : {REPORT_FILE}"
+    )
+
+
+    print(
+        f"Trade Journal   : {TRADE_JOURNAL}"
+    )
+
+
+    print()
+
+    print(
+        "SULTAN QUANT OS COMPLETE"
+    )
+
 
 
 # =====================================================
@@ -176,4 +342,5 @@ def main():
 # =====================================================
 
 if __name__ == "__main__":
+
     main()

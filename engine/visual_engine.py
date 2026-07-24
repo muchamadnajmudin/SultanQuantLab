@@ -1,33 +1,39 @@
 """
 ==========================================
 SULTAN QUANT OS
-Visual Engine
-Version : 2.3.1
+Module : Visual Engine
+Version : 2.3.2
 ==========================================
 """
 
 from pathlib import Path
+from collections import defaultdict
 
 import matplotlib.pyplot as plt
+
 
 
 # =====================================================
 # CONFIG
 # =====================================================
 
-OUTPUT_DIR = Path("reports/output")
+OUTPUT_DIR = Path(
+    "reports/output"
+)
+
 
 
 # =====================================================
-# INTERNAL
+# PREPARE OUTPUT
 # =====================================================
 
 def _prepare_output():
 
     OUTPUT_DIR.mkdir(
         parents=True,
-        exist_ok=True,
+        exist_ok=True
     )
+
 
 
 # =====================================================
@@ -36,31 +42,71 @@ def _prepare_output():
 
 def save_equity_curve(stats: dict):
 
-    equity = stats.get("equity_curve", [])
+
+    equity = stats.get(
+        "equity_curve",
+        []
+    )
+
 
     if not equity:
-        return
 
-    plt.figure(figsize=(10, 5))
+        return None
 
-    plt.plot(equity)
 
-    plt.title("Equity Curve")
 
-    plt.xlabel("Trade")
+    plt.figure(
+        figsize=(10,5)
+    )
 
-    plt.ylabel("Balance")
 
-    plt.grid(True)
+    plt.plot(
+        equity
+    )
+
+
+    plt.title(
+        "Equity Curve"
+    )
+
+
+    plt.xlabel(
+        "Trade"
+    )
+
+
+    plt.ylabel(
+        "Balance"
+    )
+
+
+    plt.grid(
+        True
+    )
+
 
     plt.tight_layout()
 
-    plt.savefig(
-        OUTPUT_DIR / "equity_curve.png",
-        dpi=150,
+
+
+    file_path = (
+        OUTPUT_DIR /
+        "equity_curve.png"
     )
 
+
+    plt.savefig(
+        file_path,
+        dpi=150
+    )
+
+
     plt.close()
+
+
+
+    return file_path
+
 
 
 # =====================================================
@@ -69,47 +115,71 @@ def save_equity_curve(stats: dict):
 
 def save_drawdown_chart(stats: dict):
 
-    equity = stats.get("equity_curve", [])
 
-    if not equity:
-        return
+    drawdown = stats.get(
+        "drawdown_curve",
+        []
+    )
 
-    peak = []
 
-    highest = equity[0]
+    if not drawdown:
 
-    for value in equity:
+        return None
 
-        highest = max(highest, value)
 
-        peak.append(highest)
 
-    drawdown = []
+    plt.figure(
+        figsize=(10,5)
+    )
 
-    for current, high in zip(equity, peak):
 
-        drawdown.append(current - high)
+    plt.plot(
+        drawdown
+    )
 
-    plt.figure(figsize=(10, 5))
 
-    plt.plot(drawdown)
+    plt.title(
+        "Drawdown"
+    )
 
-    plt.title("Drawdown")
 
-    plt.xlabel("Trade")
+    plt.xlabel(
+        "Trade"
+    )
 
-    plt.ylabel("Drawdown")
 
-    plt.grid(True)
+    plt.ylabel(
+        "Drawdown"
+    )
+
+
+    plt.grid(
+        True
+    )
+
 
     plt.tight_layout()
 
-    plt.savefig(
-        OUTPUT_DIR / "drawdown.png",
-        dpi=150,
+
+
+    file_path = (
+        OUTPUT_DIR /
+        "drawdown.png"
     )
 
+
+    plt.savefig(
+        file_path,
+        dpi=150
+    )
+
+
     plt.close()
+
+
+
+    return file_path
+
 
 
 # =====================================================
@@ -118,31 +188,75 @@ def save_drawdown_chart(stats: dict):
 
 def save_profit_distribution(trades):
 
-    profits = [trade.profit for trade in trades]
 
-    if len(profits) == 0:
-        return
+    profits = [
 
-    plt.figure(figsize=(10, 5))
+        float(trade.profit)
 
-    plt.hist(profits, bins=20)
+        for trade in trades
 
-    plt.title("Profit Distribution")
+    ]
 
-    plt.xlabel("Profit")
 
-    plt.ylabel("Frequency")
+    if not profits:
 
-    plt.grid(True)
+        return None
+
+
+
+    plt.figure(
+        figsize=(10,5)
+    )
+
+
+    plt.hist(
+        profits,
+        bins=20
+    )
+
+
+    plt.title(
+        "Profit Distribution"
+    )
+
+
+    plt.xlabel(
+        "Profit"
+    )
+
+
+    plt.ylabel(
+        "Frequency"
+    )
+
+
+    plt.grid(
+        True
+    )
+
 
     plt.tight_layout()
 
-    plt.savefig(
-        OUTPUT_DIR / "profit_distribution.png",
-        dpi=150,
+
+
+    file_path = (
+        OUTPUT_DIR /
+        "profit_distribution.png"
     )
 
+
+    plt.savefig(
+        file_path,
+        dpi=150
+    )
+
+
     plt.close()
+
+
+
+    return file_path
+
 
 
 # =====================================================
@@ -151,13 +265,103 @@ def save_profit_distribution(trades):
 
 def save_monthly_returns(trades):
 
-    """
-    Placeholder.
 
-    Akan dibuat pada Sprint 2.3.2
-    """
+    monthly = defaultdict(float)
 
-    return
+
+
+    for trade in trades:
+
+
+        if trade.exit_time:
+
+            key = (
+                trade.exit_time
+                .strftime("%Y-%m")
+            )
+
+
+            monthly[key] += float(
+                trade.profit
+            )
+
+
+
+    if not monthly:
+
+        return None
+
+
+
+    months = list(
+        monthly.keys()
+    )
+
+
+    values = list(
+        monthly.values()
+    )
+
+
+
+    plt.figure(
+        figsize=(10,5)
+    )
+
+
+    plt.bar(
+        months,
+        values
+    )
+
+
+    plt.title(
+        "Monthly Returns"
+    )
+
+
+    plt.xlabel(
+        "Month"
+    )
+
+
+    plt.ylabel(
+        "Profit"
+    )
+
+
+    plt.xticks(
+        rotation=45
+    )
+
+
+    plt.grid(
+        True
+    )
+
+
+    plt.tight_layout()
+
+
+
+    file_path = (
+        OUTPUT_DIR /
+        "monthly_returns.png"
+    )
+
+
+    plt.savefig(
+        file_path,
+        dpi=150
+    )
+
+
+    plt.close()
+
+
+
+    return file_path
+
 
 
 # =====================================================
@@ -166,15 +370,36 @@ def save_monthly_returns(trades):
 
 def generate_visual_reports(
     stats: dict,
-    trades,
+    trades
 ):
+
 
     _prepare_output()
 
-    save_equity_curve(stats)
 
-    save_drawdown_chart(stats)
 
-    save_profit_distribution(trades)
+    files = []
 
-    save_monthly_returns(trades)
+
+    for result in [
+
+        save_equity_curve(stats),
+
+        save_drawdown_chart(stats),
+
+        save_profit_distribution(trades),
+
+        save_monthly_returns(trades),
+
+    ]:
+
+
+        if result:
+
+            files.append(
+                result
+            )
+
+
+
+    return files
