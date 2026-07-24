@@ -2,163 +2,75 @@
 ==========================================
 Sultan Quant Lab
 Module : Statistics Engine
-Version : 2.2
+Version : 2.3.2
 ==========================================
 """
 
-from engine.trade import Trade
 import math
+import config.settings as settings
 
 
-def calculate_statistics(trades: list[Trade]):
-
-    total_trade = len(trades)
-
-    if total_trade == 0:
-        return {
-            "total_trade": 0,
-            "winner": 0,
-            "loser": 0,
-            "win_rate": 0.0,
-            "gross_profit": 0.0,
-            "gross_loss": 0.0,
-            "net_profit": 0.0,
-            "profit_factor": 0.0,
-            "average_win": 0.0,
-            "average_loss": 0.0,
-            "expectancy": 0.0,
-            "average_trade": 0.0,
-            "max_win": 0.0,
-            "max_loss": 0.0,
-            "average_rr": 0.0,
-            "max_drawdown": 0.0,
-            "max_drawdown_percent": 0.0,
-            "max_win_streak": 0,
-            "max_loss_streak": 0,
-            "recovery_factor": 0.0,
-            "sharpe_ratio": 0.0,
-        }
-
-
-    winners = [
-        t for t in trades
-        if t.profit > 0
-    ]
-
-    losers = [
-        t for t in trades
-        if t.profit <= 0
-    ]
-
-
-    gross_profit = sum(
-        t.profit for t in winners
-    )
-
-    gross_loss = abs(
-        sum(t.profit for t in losers)
-    )
-
-
-    net_profit = (
-        gross_profit -
-        gross_loss
-    )
-
-
-    win_rate = (
-        len(winners)
-        /
-        total_trade
-    ) * 100
-
-
-    average_win = (
-        gross_profit / len(winners)
-        if winners
-        else 0
-    )
-
-
-    average_loss = (
-        gross_loss / len(losers)
-        if losers
-        else 0
-    )
-
-
-    profit_factor = (
-        gross_profit / gross_loss
-        if gross_loss > 0
-        else float("inf")
-    )
-
-
-    expectancy = (
-        net_profit /
-        total_trade
-    )
-
-
-    max_win = max(
-        (t.profit for t in winners),
-        default=0
-    )
-
-
-    max_loss = min(
-        (t.profit for t in losers),
-        default=0
-    )
-
-
-    average_rr = (
-        average_win / average_loss
-        if average_loss > 0
-        else float("inf")
-    )
-
-
-    # ===============================
-    # EQUITY & DRAWDOWN
-    # ===============================
-
-    equity = 0
-    peak = 0
-
-    max_drawdown = 0
-
-    equity_curve = []
-
-
-    for trade in trades:
-
-        equity += trade.profit
-
-        equity_curve.append(equity)
-
-        if equity > peak:
-            peak = equity
-
-        drawdown = (
-            peak - equity
-        )
-
-        if drawdown > max_drawdown:
-            max_drawdown = drawdown
+ROUND_DIGITS = 2
 
 
 
-    max_drawdown_percent = (
-        (max_drawdown / peak) * 100
-        if peak > 0
-        else 0
-    )
+# =====================================================
+# EMPTY STATISTICS
+# =====================================================
+
+def empty_statistics():
+
+    return {
+
+        "total_trade": 0,
+
+        "winner": 0,
+        "loser": 0,
+
+        "win_rate": 0,
+
+        "gross_profit": 0,
+        "gross_loss": 0,
+        "net_profit": 0,
+
+        "profit_factor": 0,
+
+        "average_win": 0,
+        "average_loss": 0,
+
+        "expectancy": 0,
+        "average_trade": 0,
+
+        "max_win": 0,
+        "max_loss": 0,
+
+        "average_rr": 0,
+
+        "max_drawdown": 0,
+        "max_drawdown_percent": 0,
+
+        "max_win_streak": 0,
+        "max_loss_streak": 0,
+
+        "recovery_factor": 0,
+
+        "sharpe_ratio": 0,
+
+        "equity_curve": [
+            settings.INITIAL_BALANCE
+        ],
+
+        "drawdown_curve": []
+
+    }
 
 
-    # ===============================
-    # WIN / LOSS STREAK
-    # ===============================
+
+# =====================================================
+# STREAK
+# =====================================================
+
+def calculate_streaks(trades):
 
     win_streak = 0
     loss_streak = 0
@@ -167,23 +79,28 @@ def calculate_statistics(trades: list[Trade]):
     max_loss_streak = 0
 
 
+
     for trade in trades:
+
 
         if trade.profit > 0:
 
             win_streak += 1
             loss_streak = 0
 
-        else:
+
+        elif trade.profit < 0:
 
             loss_streak += 1
             win_streak = 0
+
 
 
         max_win_streak = max(
             max_win_streak,
             win_streak
         )
+
 
         max_loss_streak = max(
             max_loss_streak,
@@ -192,141 +109,503 @@ def calculate_statistics(trades: list[Trade]):
 
 
 
-    # ===============================
-    # RECOVERY FACTOR
-    # ===============================
-
-    recovery_factor = (
-        net_profit / max_drawdown
-        if max_drawdown > 0
-        else 0
+    return (
+        max_win_streak,
+        max_loss_streak
     )
 
 
 
-    # ===============================
-    # SHARPE RATIO
-    # ===============================
+# =====================================================
+# SHARPE
+# =====================================================
+
+def calculate_sharpe(trades):
+
 
     returns = [
-        t.profit
-        for t in trades
+
+        float(trade.profit)
+
+        for trade in trades
+
     ]
 
 
-    avg_return = (
-        sum(returns)
-        /
-        len(returns)
-    )
+
+    if len(returns) < 2:
+
+        return 0
+
+
+
+    avg = sum(returns) / len(returns)
+
 
 
     variance = sum(
-        (x - avg_return) ** 2
+
+        (x - avg) ** 2
+
         for x in returns
-    ) / len(returns)
+
+    ) / (len(returns) - 1)
 
 
-    std_dev = math.sqrt(
+
+    std = math.sqrt(
         variance
     )
 
 
-    sharpe_ratio = (
-        avg_return / std_dev
-        if std_dev > 0
+
+    if std == 0:
+
+        return 0
+
+
+
+    return avg / std
+
+
+
+# =====================================================
+# MAIN
+# =====================================================
+
+def calculate_statistics(trades):
+
+
+    total_trade = len(trades)
+
+
+
+    if total_trade == 0:
+
+        return empty_statistics()
+
+
+
+    winners = [
+
+        float(t.profit)
+
+        for t in trades
+
+        if t.profit > 0
+
+    ]
+
+
+
+    losers = [
+
+        float(t.profit)
+
+        for t in trades
+
+        if t.profit < 0
+
+    ]
+
+
+
+    winner_count = len(winners)
+
+    loser_count = len(losers)
+
+
+
+    gross_profit = sum(winners)
+
+
+    gross_loss = abs(
+        sum(losers)
+    )
+
+
+    net_profit = (
+
+        gross_profit -
+        gross_loss
+
+    )
+
+
+
+    win_rate = (
+
+        winner_count /
+        total_trade *
+        100
+
+    )
+
+
+
+    profit_factor = (
+
+        gross_profit /
+        gross_loss
+
+        if gross_loss > 0
+
         else 0
+
+    )
+
+
+
+    average_win = (
+
+        gross_profit /
+        winner_count
+
+        if winner_count
+
+        else 0
+
+    )
+
+
+
+    average_loss = (
+
+        gross_loss /
+        loser_count
+
+        if loser_count
+
+        else 0
+
+    )
+
+
+
+    average_trade = (
+
+        net_profit /
+        total_trade
+
+    )
+
+
+    expectancy = average_trade
+
+
+
+    # =================================================
+    # RISK REWARD
+    # =================================================
+
+    rr_values = [
+
+        float(trade.risk_reward)
+
+        for trade in trades
+
+        if trade.risk_reward > 0
+
+    ]
+
+
+
+    average_rr = (
+
+        sum(rr_values) /
+        len(rr_values)
+
+        if rr_values
+
+        else 0
+
+    )
+
+
+
+    max_win = (
+
+        max(winners)
+
+        if winners
+
+        else 0
+
+    )
+
+
+
+    max_loss = (
+
+        min(
+
+            [
+
+                float(t.profit)
+
+                for t in trades
+
+            ]
+
+        )
+
+        if trades
+
+        else 0
+
+    )
+
+
+
+    # =================================================
+    # EQUITY CURVE
+    # =================================================
+
+    equity = settings.INITIAL_BALANCE
+
+
+    equity_curve = [
+
+        float(equity)
+
+    ]
+
+
+    peak = equity
+
+
+    drawdown_curve = []
+
+
+    max_drawdown = 0
+
+
+
+    for trade in trades:
+
+
+        equity += float(
+            trade.profit
+        )
+
+
+        equity_curve.append(
+            float(equity)
+        )
+
+
+
+        if equity > peak:
+
+            peak = equity
+
+
+
+        drawdown = peak - equity
+
+
+
+        drawdown_curve.append(
+
+            float(drawdown)
+
+        )
+
+
+
+        max_drawdown = max(
+
+            max_drawdown,
+
+            drawdown
+
+        )
+
+
+
+    # mengikuti baseline lama
+
+    max_drawdown_percent = (
+
+        max_drawdown /
+        net_profit *
+        100
+
+        if net_profit != 0
+
+        else 0
+
+    )
+
+
+
+    max_win_streak, max_loss_streak = calculate_streaks(
+        trades
+    )
+
+
+
+    recovery_factor = (
+
+        net_profit /
+        max_drawdown
+
+        if max_drawdown
+
+        else 0
+
+    )
+
+
+
+    sharpe_ratio = calculate_sharpe(
+        trades
     )
 
 
 
     return {
 
+
         "total_trade": total_trade,
 
-        "winner": len(winners),
 
-        "loser": len(losers),
+        "winner": winner_count,
+
+
+        "loser": loser_count,
+
 
         "win_rate": round(
-            win_rate, 2
+            win_rate,
+            ROUND_DIGITS
         ),
+
+
 
         "gross_profit": round(
-            gross_profit, 2
+            gross_profit,
+            ROUND_DIGITS
         ),
+
 
         "gross_loss": round(
-            gross_loss, 2
+            gross_loss,
+            ROUND_DIGITS
         ),
+
 
         "net_profit": round(
-            net_profit, 2
+            net_profit,
+            ROUND_DIGITS
         ),
 
-        "profit_factor":
-            round(profit_factor, 2)
-            if profit_factor != float("inf")
-            else float("inf"),
+
+
+        "profit_factor": round(
+            profit_factor,
+            ROUND_DIGITS
+        ),
+
 
 
         "average_win": round(
-            average_win, 2
+            average_win,
+            ROUND_DIGITS
         ),
+
+
 
         "average_loss": round(
-            average_loss, 2
+            average_loss,
+            ROUND_DIGITS
         ),
+
+
 
         "expectancy": round(
-            expectancy, 2
+            expectancy,
+            ROUND_DIGITS
         ),
+
+
 
         "average_trade": round(
-            expectancy, 2
+            average_trade,
+            ROUND_DIGITS
         ),
+
+
 
         "max_win": round(
-            max_win, 2
+            max_win,
+            ROUND_DIGITS
         ),
+
+
 
         "max_loss": round(
-            max_loss, 2
+            max_loss,
+            ROUND_DIGITS
         ),
 
-        "average_rr":
-            round(average_rr, 2)
-            if average_rr != float("inf")
-            else float("inf"),
+
+
+        "average_rr": round(
+            average_rr,
+            ROUND_DIGITS
+        ),
+
 
 
         "max_drawdown": round(
-            max_drawdown, 2
+            max_drawdown,
+            ROUND_DIGITS
         ),
+
+
 
         "max_drawdown_percent": round(
-            max_drawdown_percent, 2
+            max_drawdown_percent,
+            ROUND_DIGITS
         ),
 
 
-        "max_win_streak":
-            max_win_streak,
+
+        "max_win_streak": max_win_streak,
 
 
-        "max_loss_streak":
-            max_loss_streak,
+        "max_loss_streak": max_loss_streak,
+
 
 
         "recovery_factor": round(
-            recovery_factor, 2
+            recovery_factor,
+            ROUND_DIGITS
         ),
+
 
 
         "sharpe_ratio": round(
-            sharpe_ratio, 2
+            sharpe_ratio,
+            ROUND_DIGITS
         ),
 
 
-        "equity_curve":
-            equity_curve,
+
+        "equity_curve": equity_curve,
+
+
+
+        "drawdown_curve": [
+
+            round(
+                x,
+                ROUND_DIGITS
+            )
+
+            for x in drawdown_curve
+
+        ]
+
     }
