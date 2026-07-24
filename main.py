@@ -2,9 +2,11 @@
 ==========================================
 SULTAN QUANT OS
 Main Pipeline
-Version : 2.4
+Version : 2.4.1
 ==========================================
 """
+
+from pathlib import Path
 
 from config.settings import DEFAULT_STRATEGY
 
@@ -17,6 +19,15 @@ from engine.trade_logger import save_trade_journal
 
 from reports.report_engine import generate_report
 from reports.report_writer import save_report
+
+
+# =====================================================
+# CONSTANT
+# =====================================================
+
+REPORT_DIR = Path("reports/output")
+REPORT_FILE = REPORT_DIR / "backtest_report.txt"
+TRADE_JOURNAL = REPORT_DIR / "trade_journal.csv"
 
 
 # =====================================================
@@ -55,6 +66,9 @@ def print_statistics(stats: dict):
 
 def main():
 
+    # Pastikan folder output tersedia
+    REPORT_DIR.mkdir(parents=True, exist_ok=True)
+
     print_header()
 
     # -------------------------------------
@@ -74,7 +88,6 @@ def main():
     # -------------------------------------
 
     print()
-
     print("Calculating Indicators...")
 
     df = calculate_indicators(df)
@@ -86,7 +99,6 @@ def main():
     # -------------------------------------
 
     print()
-
     print("Running Strategy...")
 
     df = run_strategy(
@@ -101,7 +113,6 @@ def main():
     # -------------------------------------
 
     print()
-
     print("Running Backtest...")
 
     trades = run_backtest(df)
@@ -113,7 +124,6 @@ def main():
     # -------------------------------------
 
     print()
-
     print("Generating Statistics...")
 
     stats = calculate_statistics(trades)
@@ -131,14 +141,13 @@ def main():
     # -------------------------------------
 
     print()
-
     print("Saving Report...")
 
     report = generate_report(stats)
 
     save_report(
         report,
-        "backtest_report.txt",
+        str(REPORT_FILE),
     )
 
     print("[OK] Report Saved")
@@ -148,19 +157,18 @@ def main():
     # -------------------------------------
 
     print()
-
     print("Saving Trade Journal...")
 
     save_trade_journal(
         trades,
-        "trade_journal.csv",
+        str(TRADE_JOURNAL),
     )
 
     print("[OK] Trade Journal Saved")
 
     print()
-    print("Report Location : reports/backtest_report.txt")
-    print("Trade Journal   : reports/trade_journal.csv")
+    print(f"Report Location : {REPORT_FILE}")
+    print(f"Trade Journal   : {TRADE_JOURNAL}")
 
 
 # =====================================================

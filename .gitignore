@@ -1,8 +1,42 @@
-venv/
+# ==========================================
+# Python
+# ==========================================
+
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+
+# Virtual Environment
+venv/
+.venv/
+env/
+
+# Environment Variables
+.env
+
+# IDE
 .vscode/
 .idea/
+
+# Logs
 *.log
-reports/
-.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# ==========================================
+# Generated Reports (ignore output only)
+# ==========================================
+
+reports/output/
+
+# Generated files
+*.png
+*.html
+
+# Keep report source code tracked
+!reports/__init__.py
+!reports/report_engine.py
+!reports/report_writer.py
+!reports/csv_exporter.py
