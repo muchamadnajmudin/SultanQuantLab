@@ -20,6 +20,7 @@ from engine.visual_engine import generate_visual_reports
 
 from reports.report_engine import generate_report
 from reports.report_writer import save_report
+from reports.html_report import generate_html_report
 
 
 
@@ -68,17 +69,11 @@ def print_statistics(stats: dict):
 
     for key, value in stats.items():
 
-
         if key in [
-
             "equity_curve",
-
             "drawdown_curve"
-
         ]:
-
             continue
-
 
 
         print(
@@ -101,7 +96,6 @@ def main():
         parents=True,
         exist_ok=True
     )
-
 
 
     print_header()
@@ -220,9 +214,7 @@ def main():
         stats
     )
 
-
-
-    # -------------------------------------
+        # -------------------------------------
     # SAVE REPORT
     # -------------------------------------
 
@@ -249,6 +241,35 @@ def main():
 
     print(
         "[OK] Report Saved"
+    )
+
+
+
+    # -------------------------------------
+    # HTML REPORT
+    # -------------------------------------
+
+    print()
+
+    print(
+        "Generating HTML Report..."
+    )
+
+
+    html_report = generate_html_report(
+
+        stats
+
+    )
+
+
+    print(
+        "[OK] HTML Report Saved"
+    )
+
+
+    print(
+        f" - {html_report}"
     )
 
 
@@ -321,6 +342,11 @@ def main():
 
     print(
         f"Report Location : {REPORT_FILE}"
+    )
+
+
+    print(
+        f"HTML Report     : {html_report}"
     )
 
 
