@@ -2,65 +2,115 @@
 
 > Professional Quantitative Trading Research Platform
 
-SultanQuantLab adalah platform backtesting dan riset trading yang dikembangkan menggunakan Python. Proyek ini dirancang untuk membantu trader menguji strategi secara objektif, melakukan optimasi parameter, serta menghasilkan statistik performa yang lengkap.
+SultanQuantLab adalah platform **backtesting dan riset trading berbasis Python** yang dikembangkan untuk membantu trader melakukan pengujian strategi secara objektif, analisis performa, optimasi parameter, dan pengembangan sistem trading kuantitatif.
+
+Project ini dirancang dengan arsitektur modular agar setiap komponen dapat dikembangkan, diuji, dan ditingkatkan secara independen.
 
 ---
 
 # Features
+
+## Market Analysis
 
 - EMA Indicator
 - RSI Indicator
 - Stochastic Indicator
 - ATR Indicator
 - ADX Indicator
+
+
+## Trading Engine
+
 - Strategy Engine
 - Backtest Engine
-- Statistics Engine
-- Optimizer Engine
 - Risk Engine
-- Modular Architecture
+- Trade Management
+
+
+## Performance Analysis
+
+- Statistics Engine
+- Profit Factor
+- Expectancy
+- Risk Reward Analysis
+- Drawdown Analysis
+- Sharpe Ratio
+- Recovery Factor
+- Equity Curve
+
+
+## Optimization
+
+- Optimizer Engine
+- Parameter Testing
+- Strategy Ranking
+
+
+## Reporting
+
+- Trade Journal
+- Text Report
+- Visual Analytics
+- Equity Curve Chart
+- Drawdown Chart
+- Profit Distribution
+- Monthly Returns
+
+
+## Architecture
+
+- Modular Design
+- Separation of Engine Layer
+- Config Driven Strategy
+- Research Oriented Workflow
 
 ---
 
 # Project Structure
 
-```
-SultanQuantLab/
-│
-├── archive/
-├── config/
-├── data/
-├── engine/
-├── indicators/
-├── optimizer/
-├── strategies/
-├── tests/
-│
-├── CHANGELOG.md
-├── PROJECT_SPEC.md
-├── SULTANQUANT_AI_CONTEXT.md
-├── README.md
-└── main.py
-```
+
+---
+
+# Documentation
+
+Project documentation:
+
+- [Module Contract](docs/MODULE_CONTRACT.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Roadmap](docs/ROADMAP.md)
+- [Development Changelog](docs/CHANGELOG_DEV.md)
 
 ---
 
 # Current Strategy
 
-Current default strategy:
+Default strategy:
+
+## XAUUSD Quant Strategy
+
+Components:
 
 - EMA Trend Filter
+- EMA 20 / EMA 50 / EMA 200
 - RSI (2)
 - Stochastic (21,2,2)
 - ATR Stop Loss
 - ATR Take Profit
 - ADX Trend Filter
 
+
+Risk Management:
+
+- Risk Per Trade
+- ATR Based Stop Loss
+- ATR Based Take Profit
+- Drawdown Monitoring
+
 ---
 
-# Current Statistics
+# Current Backtest Statistics
 
-The Statistics Engine currently provides:
+Statistics Engine provides:
 
 - Total Trade
 - Winner
@@ -87,95 +137,6 @@ The Statistics Engine currently provides:
 
 ---
 
-# Installation
+# Latest Backtest Result
 
-Clone repository
-
-```bash
-git clone https://github.com/muchamadnajmudin/SultanQuantLab.git
-```
-
-Masuk ke folder project
-
-```bash
-cd SultanQuantLab
-```
-
-Install dependency
-
-```bash
-pip install -r requirements.txt
-```
-
-Jalankan program
-
-```bash
-python main.py
-```
-
----
-
-# Roadmap
-
-## Version 2.3
-
-- Professional Repository
-- Performance Engine
-- Better Documentation
-
-## Version 2.4
-
-- Report Engine
-- PDF Report
-- Excel Report
-
-## Version 2.5
-
-- Visualization
-- Equity Curve Chart
-- Drawdown Chart
-
-## Version 3.0
-
-- AI Quant Platform
-- Telegram Integration
-- Dashboard
-- Cloud Support
-
----
-
-# Development Workflow
-
-```
-Code
-
-↓
-
-Test
-
-↓
-
-git add .
-
-↓
-
-git commit
-
-↓
-
-git push
-```
-
----
-
-# License
-
-This project is developed for research and educational purposes.
-
----
-
-# Author
-
-**Muchamad Najmudin**
-
-Founder of SultanQuantLab
+Current benchmark:
