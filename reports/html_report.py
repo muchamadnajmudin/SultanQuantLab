@@ -2,7 +2,7 @@
 ==========================================
 SULTAN QUANT OS
 HTML Report Generator
-Version : 2.4.0
+Version : 4.5.0
 ==========================================
 """
 
@@ -10,6 +10,7 @@ from pathlib import Path
 from datetime import datetime
 
 from reports.report_template import HTML_TEMPLATE
+
 
 
 # =====================================================
@@ -27,6 +28,7 @@ HTML_FILE = (
 )
 
 
+
 # =====================================================
 # FORMAT
 # =====================================================
@@ -35,7 +37,10 @@ def _format(value):
 
     if isinstance(value, float):
 
-        return round(value, 2)
+        return round(
+            value,
+            2
+        )
 
     return value
 
@@ -47,7 +52,10 @@ def _format(value):
 
 def generate_html_report(
     statistics: dict,
-    filename: str = None
+    wfo_analysis: dict = None,
+    monte_carlo_analysis: dict = None,
+    risk_dashboard: dict = None,
+    filename: str = None,
 ):
 
 
@@ -57,32 +65,68 @@ def generate_html_report(
     )
 
 
+
     html = HTML_TEMPLATE
+
+
+
+    if wfo_analysis is None:
+
+        wfo_analysis = {}
+
+
+
+    if monte_carlo_analysis is None:
+
+        monte_carlo_analysis = {}
+
+
+
+    if risk_dashboard is None:
+
+        risk_dashboard = {}
 
 
 
     replacements = {
 
+
+
         "{{VERSION}}":
-            "2.4.0",
+
+            "4.5.0",
+
+
 
         "{{STRATEGY}}":
+
             "XAUUSD Quant Strategy",
 
+
+
         "{{SYMBOL}}":
+
             "XAUUSD",
 
+
+
         "{{TIMEFRAME}}":
+
             "M1",
 
+
+
         "{{GENERATED}}":
+
             datetime.now()
             .strftime(
                 "%Y-%m-%d %H:%M:%S"
             ),
 
 
+
         "{{NET_PROFIT}}":
+
             str(
                 _format(
                     statistics.get(
@@ -93,7 +137,9 @@ def generate_html_report(
             ),
 
 
+
         "{{WIN_RATE}}":
+
             str(
                 _format(
                     statistics.get(
@@ -105,7 +151,9 @@ def generate_html_report(
             + "%",
 
 
+
         "{{PROFIT_FACTOR}}":
+
             str(
                 _format(
                     statistics.get(
@@ -116,7 +164,9 @@ def generate_html_report(
             ),
 
 
+
         "{{MAX_DRAWDOWN}}":
+
             str(
                 _format(
                     statistics.get(
@@ -127,7 +177,9 @@ def generate_html_report(
             ),
 
 
+
         "{{RECOVERY}}":
+
             str(
                 _format(
                     statistics.get(
@@ -138,7 +190,9 @@ def generate_html_report(
             ),
 
 
+
         "{{SHARPE}}":
+
             str(
                 _format(
                     statistics.get(
@@ -149,7 +203,9 @@ def generate_html_report(
             ),
 
 
+
         "{{WINNER}}":
+
             str(
                 statistics.get(
                     "winner",
@@ -158,7 +214,9 @@ def generate_html_report(
             ),
 
 
+
         "{{LOSER}}":
+
             str(
                 statistics.get(
                     "loser",
@@ -166,33 +224,110 @@ def generate_html_report(
                 )
             ),
 
+        "{{WFO_SCORE}}":
+
+            str(
+                _format(
+                    wfo_analysis.get(
+                        "wfo_score",
+                        0
+                    )
+                )
+            ),
+
+
+
+        "{{WFO_STABILITY}}":
+
+            str(
+                _format(
+                    wfo_analysis.get(
+                        "stability",
+                        0
+                    )
+                )
+            ),
+
+
+
+        "{{MC_RISK}}":
+
+            str(
+                _format(
+                    monte_carlo_analysis.get(
+                        "risk",
+                        0
+                    )
+                )
+            ),
+
+
+
+        "{{MC_DRAWDOWN}}":
+
+            str(
+                _format(
+                    monte_carlo_analysis.get(
+                        "max_drawdown",
+                        0
+                    )
+                )
+            ),
+
+
+
+        "{{QUALITY_SCORE}}":
+
+            str(
+                _format(
+                    risk_dashboard.get(
+                        "quality_score",
+                        0
+                    )
+                )
+            ),
+
+
     }
 
 
 
     for key, value in replacements.items():
 
+
         html = html.replace(
+
             key,
+
             value
+
         )
 
 
 
     if filename:
 
-        output = Path(filename)
+
+        output = Path(
+            filename
+        )
+
 
     else:
+
 
         output = HTML_FILE
 
 
 
     output.write_text(
+
         html,
+
         encoding="utf-8"
+
     )
 
 
-    return output
+
+    return output            
