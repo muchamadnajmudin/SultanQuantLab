@@ -2,8 +2,16 @@
 ==========================================
 SULTAN QUANT OS
 Optimizer Engine
-Version : 2.5.0
+Version : 3.1.0
 ==========================================
+
+Support:
+
+- File based optimizer (legacy)
+- DataFrame optimizer (WFO)
+- Grid Search
+- Ranking
+
 """
 
 from itertools import product
@@ -26,7 +34,10 @@ def run_single_test(
     rsi_overbought: int,
 ) -> dict:
     """
-    Menjalankan satu kombinasi parameter.
+    Menjalankan satu kombinasi parameter
+    menggunakan file data.
+
+    Legacy optimizer.
     """
 
     df = load_data(
@@ -34,21 +45,53 @@ def run_single_test(
     )
 
 
-    df = calculate_indicators(
-        df
-    )
-
-
-    df = run_strategy(
-        df,
+    return run_dataframe_test(
+        df=df,
         rsi_oversold=rsi_oversold,
         rsi_overbought=rsi_overbought,
     )
 
 
-    trades = run_backtest(
-        df
+
+# =====================================================
+# DATAFRAME BACKTEST TEST
+# =====================================================
+
+def run_dataframe_test(
+    df,
+    rsi_oversold: int,
+    rsi_overbought: int,
+) -> dict:
+    """
+    Menjalankan satu kombinasi parameter
+    menggunakan dataframe.
+
+    Digunakan oleh Walk Forward Optimization.
+    """
+
+
+    data = df.copy()
+
+
+
+    data = calculate_indicators(
+        data
     )
+
+
+
+    data = run_strategy(
+        data,
+        rsi_oversold=rsi_oversold,
+        rsi_overbought=rsi_overbought,
+    )
+
+
+
+    trades = run_backtest(
+        data
+    )
+
 
 
     stats = calculate_statistics(
@@ -56,8 +99,16 @@ def run_single_test(
     )
 
 
-    stats["RSI_OVERSOLD"] = rsi_oversold
-    stats["RSI_OVERBOUGHT"] = rsi_overbought
+
+    stats["RSI_OVERSOLD"] = (
+        rsi_oversold
+    )
+
+
+    stats["RSI_OVERBOUGHT"] = (
+        rsi_overbought
+    )
+
 
 
     return stats
@@ -65,7 +116,7 @@ def run_single_test(
 
 
 # =====================================================
-# GRID SEARCH
+# GRID SEARCH FILE MODE
 # =====================================================
 
 def optimize(
@@ -73,23 +124,14 @@ def optimize(
     parameter_grid: dict,
 ) -> list[dict]:
     """
-    Grid Search Optimizer.
+    Grid Search menggunakan file.
 
-    Input:
-
-    {
-        "RSI_OVERSOLD":[5,10,15],
-        "RSI_OVERBOUGHT":[85,90,95]
-    }
-
-
-    Output:
-
-    list hasil statistik
+    Digunakan optimizer lama.
     """
 
 
     results = []
+
 
 
     combinations = product(
@@ -99,6 +141,7 @@ def optimize(
         parameter_grid["RSI_OVERBOUGHT"],
 
     )
+
 
 
     for oversold, overbought in combinations:
@@ -118,6 +161,65 @@ def optimize(
         results.append(
             result
         )
+
+
+
+    return rank_results(
+        results
+    )
+
+
+
+# =====================================================
+# GRID SEARCH DATAFRAME MODE
+# =====================================================
+
+def optimize_dataframe(
+    df,
+    parameter_grid: dict,
+) -> list[dict]:
+    """
+    Grid Search menggunakan dataframe.
+
+    Digunakan oleh Walk Forward Optimization.
+
+    Data sudah dipisahkan menjadi
+    training window.
+    """
+
+
+    results = []
+
+
+
+    combinations = product(
+
+        parameter_grid["RSI_OVERSOLD"],
+
+        parameter_grid["RSI_OVERBOUGHT"],
+
+    )
+
+
+
+    for oversold, overbought in combinations:
+
+
+        result = run_dataframe_test(
+
+            df=df,
+
+            rsi_oversold=oversold,
+
+            rsi_overbought=overbought,
+
+        )
+
+
+        results.append(
+            result
+        )
+
 
 
     return rank_results(
