@@ -22,11 +22,26 @@ WFO DOES NOT:
 """
 
 from engine.loader import load_data
-from engine.optimizer_engine import optimize_dataframe
-from engine.indicator_engine import calculate_indicators
-from engine.strategy_engine import run_strategy
-from engine.backtest_engine import run_backtest
-from engine.statistics_engine import calculate_statistics
+
+from engine.optimizer_engine import (
+    optimize_dataframe
+)
+
+from engine.indicator_engine import (
+    calculate_indicators
+)
+
+from engine.strategy_engine import (
+    run_strategy
+)
+
+from engine.backtest_engine import (
+    run_backtest
+)
+
+from engine.statistics_engine import (
+    calculate_statistics
+)
 
 
 
@@ -64,6 +79,7 @@ def generate_windows(
 
     while True:
 
+
         train_start = start
 
         train_end = (
@@ -81,20 +97,26 @@ def generate_windows(
 
 
         if test_end > length:
+
             break
+
 
 
         windows.append(
 
             {
 
-                "train_start": train_start,
+                "train_start":
+                    train_start,
 
-                "train_end": train_end,
+                "train_end":
+                    train_end,
 
-                "test_start": test_start,
+                "test_start":
+                    test_start,
 
-                "test_end": test_end,
+                "test_end":
+                    test_end,
 
             }
 
@@ -104,15 +126,16 @@ def generate_windows(
         start += step_size
 
 
+
     return windows
 
 
 
 # ==================================================
-# VALIDATION
+# VALIDATE TEST WINDOW
 # ==================================================
 
-def validate_window(
+def validate_test_window(
     df,
     parameter,
 ):
@@ -155,7 +178,7 @@ def validate_window(
 
 
 # ==================================================
-# MAIN WFO ENGINE
+# WALK FORWARD EXECUTION
 # ==================================================
 
 def run_walk_forward(
@@ -179,13 +202,16 @@ def run_walk_forward(
 
     windows = generate_windows(
 
-        len(df),
+        length=len(df),
 
-        config["train_size"],
+        train_size=
+            config["train_size"],
 
-        config["test_size"],
+        test_size=
+            config["test_size"],
 
-        config["step_size"],
+        step_size=
+            config["step_size"],
 
     )
 
@@ -210,7 +236,7 @@ def run_walk_forward(
 
 
 
-        train = df.iloc[
+        train_df = df.iloc[
 
             window["train_start"]:
             window["train_end"]
@@ -219,7 +245,7 @@ def run_walk_forward(
 
 
 
-        test = df.iloc[
+        test_df = df.iloc[
 
             window["test_start"]:
             window["test_end"]
@@ -228,9 +254,13 @@ def run_walk_forward(
 
 
 
+        # ------------------------------
+        # TRAINING OPTIMIZATION
+        # ------------------------------
+
         optimization = optimize_dataframe(
 
-            train,
+            train_df,
 
             parameter_grid,
 
@@ -248,9 +278,13 @@ def run_walk_forward(
 
 
 
-        validation = validate_window(
+        # ------------------------------
+        # OUT OF SAMPLE TEST
+        # ------------------------------
 
-            test,
+        validation = validate_test_window(
+
+            test_df,
 
             best_parameter,
 
@@ -263,18 +297,43 @@ def run_walk_forward(
             {
 
                 "window":
+
                     index + 1,
 
 
                 "training":
-                    window,
+
+                    {
+
+                        "start":
+                            window["train_start"],
+
+                        "end":
+                            window["train_end"],
+
+                    },
+
+
+                "testing":
+
+                    {
+
+                        "start":
+                            window["test_start"],
+
+                        "end":
+                            window["test_end"],
+
+                    },
 
 
                 "best_parameter":
+
                     best_parameter,
 
 
                 "validation":
+
                     validation,
 
             }
