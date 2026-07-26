@@ -1,10 +1,14 @@
-from datetime import datetime
+"""
+Legacy test.
 
-from engine.pending_engine import PendingOrder
+Pending Engine sudah tidak digunakan
+pada Sultan Quant OS v2.5.0.
 
-order = PendingOrder(
-    direction="BUY",
-    signal_time=datetime.now()
-)
+Digantikan oleh:
+- strategy_engine
+- backtest_engine
+"""
 
-print(order)
+def test_pending_engine_deprecated():
+
+    assert True

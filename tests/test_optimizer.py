@@ -1,36 +1,34 @@
 from engine.optimizer_engine import rank_results
 
-results = [
 
-    {
-        "ema": 20,
-        "profit_factor": 1.7,
-        "net_profit": 68
-    },
+def test_optimizer_ranking():
 
-    {
-        "ema": 30,
-        "profit_factor": 2.1,
-        "net_profit": 90
-    },
+    results = [
 
-    {
-        "ema": 50,
-        "profit_factor": 1.4,
-        "net_profit": 55
-    }
+        {
+            "ema": 20,
+            "profit_factor": 1.7,
+            "net_profit": 68
+        },
 
-]
+        {
+            "ema": 30,
+            "profit_factor": 2.1,
+            "net_profit": 90
+        },
 
-ranking = rank_results(results)
+        {
+            "ema": 50,
+            "profit_factor": 1.4,
+            "net_profit": 55
+        }
 
-assert ranking[0]["ema"] == 30
-assert ranking[1]["ema"] == 20
-assert ranking[2]["ema"] == 50
+    ]
 
-print("=" * 50)
-print("OPTIMIZER TEST PASSED")
-print("=" * 50)
 
-for r in ranking:
-    print(r)
+    ranking = rank_results(results)
+
+
+    assert ranking[0]["ema"] == 30
+    assert ranking[1]["ema"] == 20
+    assert ranking[2]["ema"] == 50
