@@ -39,4 +39,6 @@ reports/output/
 !reports/__init__.py
 !reports/report_engine.py
 !reports/report_writer.py
-!reports/csv_exporter.py
+!reports/csv_exporter.pyhasil.txt
+output.txt
+output2.txt

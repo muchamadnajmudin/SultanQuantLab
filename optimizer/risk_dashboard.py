@@ -2,17 +2,17 @@
 ==========================================
 SULTAN QUANT OS
 Institutional Risk Dashboard
-Version : 3.4.0
+Version : 3.5.0
 ==========================================
 
 Responsibilities:
 
 - Combine validation metrics
-- Calculate strategy quality score
+- Calculate institutional quality score
+- Weight robustness over profitability
 - Classify overall risk
 
 """
-
 
 
 # ==================================================
@@ -56,9 +56,10 @@ def build_risk_dashboard(
 
 
 
-    # ------------------------------
-    # Profit Factor
-    # ------------------------------
+    # ==================================================
+    # PROFIT FACTOR SCORE
+    # Weight : 25%
+    # ==================================================
 
     pf = statistics.get(
         "profit_factor",
@@ -68,17 +69,30 @@ def build_risk_dashboard(
 
     if pf >= 2:
 
-        score += 30
+        pf_score = 25
 
     elif pf >= 1.5:
 
-        score += 20
+        pf_score = 20
+
+    elif pf >= 1:
+
+        pf_score = 10
+
+    else:
+
+        pf_score = 0
 
 
 
-    # ------------------------------
-    # WFO Stability
-    # ------------------------------
+    score += pf_score
+
+
+
+    # ==================================================
+    # WFO STABILITY SCORE
+    # Weight : 35%
+    # ==================================================
 
     stability = wfo_analysis.get(
         "stability_score",
@@ -86,58 +100,121 @@ def build_risk_dashboard(
     )
 
 
-    if stability >= 70:
+    if stability >= 80:
 
-        score += 30
+        wfo_score = 35
 
-    elif stability >= 50:
+    elif stability >= 60:
 
-        score += 20
+        wfo_score = 25
+
+    elif stability >= 40:
+
+        wfo_score = 15
+
+    else:
+
+        wfo_score = 0
 
 
 
-    # ------------------------------
-    # Monte Carlo Risk
-    # ------------------------------
+    score += wfo_score
 
-    risk = monte_carlo_analysis.get(
+
+
+    # ==================================================
+    # MONTE CARLO SCORE
+    # Weight : 20%
+    # ==================================================
+
+    mc_risk = monte_carlo_analysis.get(
         "risk_level",
         "HIGH"
     )
 
 
-    if risk == "LOW":
+    if mc_risk == "LOW":
 
-        score += 40
+        mc_score = 20
 
-    elif risk == "MEDIUM":
+    elif mc_risk == "MEDIUM":
 
-        score += 20
+        mc_score = 10
 
+    else:
 
-
-    # ------------------------------
-    # Classification
-    # ------------------------------
-
-    if score >= 80:
-
-        level = "INSTITUTIONAL"
+        mc_score = 0
 
 
-    elif score >= 60:
+
+    score += mc_score
+
+
+
+    # ==================================================
+    # DRAWDOWN SCORE
+    # Weight : 20%
+    # ==================================================
+
+    drawdown = statistics.get(
+        "max_drawdown_percent",
+        100
+    )
+
+
+    if drawdown <= 10:
+
+        dd_score = 20
+
+    elif drawdown <= 20:
+
+        dd_score = 15
+
+    elif drawdown <= 30:
+
+        dd_score = 10
+
+    elif drawdown <= 50:
+
+        dd_score = 5
+
+    else:
+
+        dd_score = 0
+
+
+
+    score += dd_score
+
+
+
+    # ==================================================
+    # CLASSIFICATION
+    # ==================================================
+
+    if score >= 90:
+
+        level = "EXCELLENT"
+
+
+    elif score >= 75:
 
         level = "GOOD"
 
 
+    elif score >= 60:
+
+        level = "ACCEPTABLE"
+
+
     elif score >= 40:
 
-        level = "MODERATE"
+        level = "WEAK"
 
 
     else:
 
-        level = "HIGH RISK"
+        level = "FAIL"
 
 
 
@@ -146,7 +223,8 @@ def build_risk_dashboard(
 
         "quality_score":
 
-            score,
+            round(score, 2),
+
 
 
         "risk_level":
@@ -154,13 +232,20 @@ def build_risk_dashboard(
             level,
 
 
+
         "summary":
 
             {
 
+
                 "profit_factor":
 
                     pf,
+
+
+                "profit_factor_score":
+
+                    pf_score,
 
 
                 "wfo_stability":
@@ -168,9 +253,29 @@ def build_risk_dashboard(
                     stability,
 
 
+                "wfo_score":
+
+                    wfo_score,
+
+
                 "monte_carlo":
 
-                    risk,
+                    mc_risk,
+
+
+                "monte_carlo_score":
+
+                    mc_score,
+
+
+                "drawdown":
+
+                    drawdown,
+
+
+                "drawdown_score":
+
+                    dd_score,
 
             }
 

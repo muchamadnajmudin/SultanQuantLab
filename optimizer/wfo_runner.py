@@ -2,68 +2,65 @@
 ==========================================
 SULTAN QUANT OS
 WFO Runner
-Version : 5.0.1
+Version : 5.1.0
 ==========================================
 
 Responsibilities:
 
 - Execute Walk Forward Optimization
-- Run WFO Analyzer
-- Generate WFO Report
-- Save WFO result
+- Analyze WFO results
+- Generate Advanced WFO Report
+- Export JSON
+- Export CSV
+- Generate Visual Analytics
 
 """
 
 from pathlib import Path
 import json
 
-
 from optimizer.walk_forward import (
-    run_walk_forward
+    run_walk_forward,
 )
-
 
 from optimizer.wfo_analyzer import (
-    analyze_wfo
+    analyze_wfo,
 )
 
-
-from optimizer.wfo_report import (
-    generate_wfo_report
+from reports.wfo_report_engine import (
+    generate_wfo_advanced_report,
 )
 
+from reports.wfo_csv_exporter import (
+    export_wfo_csv,
+)
+
+from engine.wfo_visual_engine import (
+    generate_wfo_visual_reports,
+)
 
 
 # ==================================================
-# CONFIG
+# OUTPUT
 # ==================================================
 
 OUTPUT_DIR = Path(
     "reports/output"
 )
 
-
 WFO_REPORT_FILE = (
-
     OUTPUT_DIR /
-
     "wfo_report.txt"
-
 )
-
 
 WFO_RESULT_FILE = (
-
     OUTPUT_DIR /
-
     "wfo_results.json"
-
 )
-
 
 
 # ==================================================
-# DEFAULT PARAMETER GRID
+# DEFAULT PARAMETER
 # ==================================================
 
 DEFAULT_PARAMETER_GRID = {
@@ -76,7 +73,6 @@ DEFAULT_PARAMETER_GRID = {
 
     ],
 
-
     "RSI_OVERBOUGHT": [
 
         85,
@@ -88,25 +84,34 @@ DEFAULT_PARAMETER_GRID = {
 }
 
 
+# ==================================================
+# DIRECTORY
+# ==================================================
+
+def prepare_output_directory():
+
+    OUTPUT_DIR.mkdir(
+
+        parents=True,
+
+        exist_ok=True,
+
+    )
+
 
 # ==================================================
 # SAVE JSON
 # ==================================================
 
 def save_wfo_results(
+
     results,
+
     filename=WFO_RESULT_FILE,
+
 ):
 
-
-    OUTPUT_DIR.mkdir(
-
-        parents=True,
-
-        exist_ok=True
-
-    )
-
+    prepare_output_directory()
 
     with open(
 
@@ -114,10 +119,9 @@ def save_wfo_results(
 
         "w",
 
-        encoding="utf-8"
+        encoding="utf-8",
 
     ) as file:
-
 
         json.dump(
 
@@ -127,13 +131,11 @@ def save_wfo_results(
 
             indent=4,
 
-            default=str
+            default=str,
 
         )
 
-
-    return filename
-
+    return Path(filename)
 
 
 # ==================================================
@@ -142,42 +144,31 @@ def save_wfo_results(
 
 def save_wfo_report(
 
-    report: str,
+    report,
 
     filename=WFO_REPORT_FILE,
 
 ):
 
-
-    OUTPUT_DIR.mkdir(
-
-        parents=True,
-
-        exist_ok=True
-
-    )
-
+    prepare_output_directory()
 
     Path(filename).write_text(
 
         report,
 
-        encoding="utf-8"
+        encoding="utf-8",
 
     )
 
+    return Path(filename)
 
-    return filename
-
-
-
-# ==================================================
-# MAIN WFO RUNNER
+    # ==================================================
+# MAIN RUNNER
 # ==================================================
 
 def run_wfo(
 
-    data_file: str,
+    data_file,
 
     parameter_grid=None,
 
@@ -185,21 +176,14 @@ def run_wfo(
 
 ):
 
-
     if parameter_grid is None:
 
-
-        parameter_grid = (
-
-            DEFAULT_PARAMETER_GRID
-
-        )
+        parameter_grid = DEFAULT_PARAMETER_GRID
 
 
-
-    # ----------------------------------------------
-    # RUN WALK FORWARD
-    # ----------------------------------------------
+    # ---------------------------------------------
+    # WALK FORWARD
+    # ---------------------------------------------
 
     results = run_walk_forward(
 
@@ -212,10 +196,9 @@ def run_wfo(
     )
 
 
-
-    # ----------------------------------------------
+    # ---------------------------------------------
     # ANALYSIS
-    # ----------------------------------------------
+    # ---------------------------------------------
 
     analysis = analyze_wfo(
 
@@ -224,12 +207,11 @@ def run_wfo(
     )
 
 
+    # ---------------------------------------------
+    # ADVANCED REPORT
+    # ---------------------------------------------
 
-    # ----------------------------------------------
-    # REPORT
-    # ----------------------------------------------
-
-    report = generate_wfo_report(
+    report = generate_wfo_advanced_report(
 
         analysis,
 
@@ -238,17 +220,9 @@ def run_wfo(
     )
 
 
-
-    # ----------------------------------------------
-    # SAVE
-    # ----------------------------------------------
-
-    result_file = save_wfo_results(
-
-        results
-
-    )
-
+    # ---------------------------------------------
+    # SAVE REPORT
+    # ---------------------------------------------
 
     report_file = save_wfo_report(
 
@@ -257,6 +231,42 @@ def run_wfo(
     )
 
 
+    # ---------------------------------------------
+    # SAVE JSON
+    # ---------------------------------------------
+
+    result_file = save_wfo_results(
+
+        results
+
+    )
+
+
+    # ---------------------------------------------
+    # EXPORT CSV
+    # ---------------------------------------------
+
+    csv_file = export_wfo_csv(
+
+        results
+
+    )
+
+
+    # ---------------------------------------------
+    # VISUAL REPORT
+    # ---------------------------------------------
+
+    visual_files = generate_wfo_visual_reports(
+
+        results
+
+    )
+
+
+    # ---------------------------------------------
+    # RETURN
+    # ---------------------------------------------
 
     return {
 
@@ -264,44 +274,98 @@ def run_wfo(
 
             results,
 
-
         "analysis":
 
             analysis,
-
 
         "report":
 
             report,
 
+        "report_file":
+
+            report_file,
 
         "result_file":
 
             result_file,
 
+        "csv_file":
 
-        "report_file":
+            csv_file,
 
-            report_file,
+        "visual_files":
+
+            visual_files,
 
     }
 
 
-
 # ==================================================
-# TEST RUN
+# TEST
 # ==================================================
 
 if __name__ == "__main__":
 
-
     output = run_wfo(
 
-        data_file=
-
-            "data/XAUUSDc_M1.csv"
+        data_file="data/XAUUSDc_M1.csv",
 
     )
 
+    print()
 
-    print(output["analysis"])
+    print("=" * 50)
+    print("SULTAN QUANT OS")
+    print("WFO RUNNER")
+    print("=" * 50)
+
+    print()
+
+    print("Analysis")
+
+    for key, value in output["analysis"].items():
+
+        print(
+
+            f"{key:25}: {value}"
+
+        )
+
+    print()
+
+    print("Generated Files")
+
+    print(
+
+        f"Report : {output['report_file']}"
+
+    )
+
+    print(
+
+        f"JSON   : {output['result_file']}"
+
+    )
+
+    print(
+
+        f"CSV    : {output['csv_file']}"
+
+    )
+
+    print()
+
+    print("Charts")
+
+    for file in output["visual_files"]:
+
+        print(
+
+            f" - {file}"
+
+        )
+
+    print()
+
+    print("WFO RUNNER COMPLETE")

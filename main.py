@@ -2,13 +2,21 @@
 ==========================================
 SULTAN QUANT OS
 Main Pipeline
-Version : 2.5.0
+Version : 5.0.1
 ==========================================
 """
 
+import sys
 from pathlib import Path
 
+
 from config.settings import DEFAULT_STRATEGY
+
+from config.wfo_settings import (
+    WFO_CONFIG,
+    WFO_PARAMETER_GRID,
+)
+
 
 from engine.loader import load_data
 from engine.indicator_engine import calculate_indicators
@@ -17,6 +25,10 @@ from engine.backtest_engine import run_backtest
 from engine.statistics_engine import calculate_statistics
 from engine.trade_logger import save_trade_journal
 from engine.visual_engine import generate_visual_reports
+
+
+from optimizer.wfo_runner import run_wfo
+
 
 from reports.report_engine import generate_report
 from reports.report_writer import save_report
@@ -70,9 +82,13 @@ def print_statistics(stats: dict):
     for key, value in stats.items():
 
         if key in [
+
             "equity_curve",
+
             "drawdown_curve"
+
         ]:
+
             continue
 
 
@@ -86,15 +102,83 @@ def print_statistics(stats: dict):
 
 
 # =====================================================
-# MAIN
+# WFO MODE
+# =====================================================
+
+def run_wfo_mode():
+
+
+    print("=" * 50)
+    print("SULTAN QUANT OS WFO MODE")
+    print("=" * 50)
+
+
+
+    result = run_wfo(
+
+        data_file="data/XAUUSDc_M1.csv",
+
+        parameter_grid=WFO_PARAMETER_GRID,
+
+        config=WFO_CONFIG,
+
+    )
+
+
+
+    print()
+
+    print("=" * 50)
+    print("WFO RESULT")
+    print("=" * 50)
+
+
+
+    for key, value in result["analysis"].items():
+
+
+        print(
+
+            f"{key:25}: {value}"
+
+        )
+
+
+
+    print()
+
+    print(
+        "WFO Report :"
+    )
+
+
+    print(
+        result["report_file"]
+    )
+
+
+
+    print()
+
+    print(
+        "SULTAN QUANT OS WFO COMPLETE"
+    )
+
+
+
+# =====================================================
+# NORMAL BACKTEST MODE
 # =====================================================
 
 def main():
 
 
     REPORT_DIR.mkdir(
+
         parents=True,
+
         exist_ok=True
+
     )
 
 
@@ -102,25 +186,19 @@ def main():
 
 
 
-    # -------------------------------------
-    # LOAD DATA
-    # -------------------------------------
-
     print("Loading Data...")
 
 
     df = load_data(
+
         "data/XAUUSDc_M1.csv"
+
     )
 
 
     print("[OK] Data Loaded")
 
 
-
-    # -------------------------------------
-    # INDICATORS
-    # -------------------------------------
 
     print()
 
@@ -137,10 +215,6 @@ def main():
     )
 
 
-
-    # -------------------------------------
-    # STRATEGY
-    # -------------------------------------
 
     print()
 
@@ -164,10 +238,6 @@ def main():
 
 
 
-    # -------------------------------------
-    # BACKTEST
-    # -------------------------------------
-
     print()
 
     print(
@@ -184,10 +254,6 @@ def main():
 
 
 
-    # -------------------------------------
-    # STATISTICS
-    # -------------------------------------
-
     print()
 
     print(
@@ -196,7 +262,9 @@ def main():
 
 
     stats = calculate_statistics(
+
         trades
+
     )
 
 
@@ -206,16 +274,12 @@ def main():
 
 
 
-    # -------------------------------------
-    # PRINT RESULT
-    # -------------------------------------
+    print_statistics(stats)
 
-    print_statistics(
-        stats
-    )
 
-        # -------------------------------------
-    # SAVE REPORT
+
+    # -------------------------------------
+    # TEXT REPORT
     # -------------------------------------
 
     print()
@@ -226,7 +290,9 @@ def main():
 
 
     report = generate_report(
+
         stats
+
     )
 
 
@@ -234,7 +300,7 @@ def main():
 
         report,
 
-        str(REPORT_FILE),
+        str(REPORT_FILE)
 
     )
 
@@ -289,7 +355,7 @@ def main():
 
         trades,
 
-        str(TRADE_JOURNAL),
+        str(TRADE_JOURNAL)
 
     )
 
@@ -301,7 +367,7 @@ def main():
 
 
     # -------------------------------------
-    # VISUAL ANALYTICS
+    # VISUAL
     # -------------------------------------
 
     print()
@@ -334,10 +400,6 @@ def main():
 
 
 
-    # -------------------------------------
-    # FINAL LOCATION
-    # -------------------------------------
-
     print()
 
     print(
@@ -369,4 +431,12 @@ def main():
 
 if __name__ == "__main__":
 
-    main()
+
+    if "--wfo" in sys.argv:
+
+        run_wfo_mode()
+
+
+    else:
+
+        main()
