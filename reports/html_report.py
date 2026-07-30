@@ -330,4 +330,4 @@ def generate_html_report(
 
 
 
-    return output            
+    return str(output)            
