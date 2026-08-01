@@ -2,7 +2,7 @@
 ==========================================
 SULTAN QUANT OS
 Monte Carlo Simulation Engine
-Version : 6.0.0
+Version : 6.1.0
 ==========================================
 
 Responsibilities:
@@ -11,11 +11,17 @@ Responsibilities:
 - Bootstrap trade sequence
 - Simulate equity paths
 - Measure robustness
+- Reproducible simulation with seed
 
 Compatible with:
 
 - list[Trade]
 - list[float]
+- Previous run_monte_carlo()
+
+Backward Compatible:
+- Existing function names preserved
+- Existing return keys preserved
 
 """
 
@@ -32,6 +38,7 @@ def _extract_profit(trade):
 
         return float(trade.profit)
 
+
     if isinstance(trade, dict):
 
         return float(
@@ -46,7 +53,9 @@ def _extract_profit(trade):
 
         )
 
+
     return float(trade)
+
 
 
 # ==================================================
@@ -68,6 +77,21 @@ def normalize_trades(
     ]
 
 
+
+# ==================================================
+# RANDOM GENERATOR
+# ==================================================
+
+def _create_rng(seed=None):
+
+    return random.Random(
+
+        seed
+
+    )
+
+
+
 # ==================================================
 # SHUFFLE
 # ==================================================
@@ -76,17 +100,27 @@ def shuffle_trades(
 
     profits,
 
+    rng=None,
+
 ):
+
+    if rng is None:
+
+        rng = _create_rng()
+
 
     shuffled = profits.copy()
 
-    random.shuffle(
+
+    rng.shuffle(
 
         shuffled
 
     )
 
+
     return shuffled
+
 
 
 # ==================================================
@@ -97,15 +131,24 @@ def bootstrap_trades(
 
     profits,
 
+    rng=None,
+
 ):
 
     if not profits:
 
         return []
 
+
+    if rng is None:
+
+        rng = _create_rng()
+
+
+
     return [
 
-        random.choice(
+        rng.choice(
 
             profits
 
@@ -118,6 +161,7 @@ def bootstrap_trades(
         )
 
     ]
+
 
 
 # ==================================================
@@ -138,15 +182,24 @@ def simulate_equity(
 
     )
 
+
     equity = [
 
         balance
 
     ]
 
+
+
     for profit in profits:
 
-        balance += profit
+
+        balance += float(
+
+            profit
+
+        )
+
 
         equity.append(
 
@@ -154,9 +207,13 @@ def simulate_equity(
 
         )
 
+
+
     return equity
 
-    # ==================================================
+
+
+# ==================================================
 # MAX DRAWDOWN
 # ==================================================
 
@@ -170,21 +227,33 @@ def calculate_drawdown(
 
         return 0.0
 
+
+
     peak = equity[0]
+
 
     max_drawdown = 0.0
 
+
+
     for value in equity:
+
 
         if value > peak:
 
             peak = value
 
+
+
         drawdown = peak - value
+
+
 
         if drawdown > max_drawdown:
 
             max_drawdown = drawdown
+
+
 
     return round(
 
@@ -193,6 +262,7 @@ def calculate_drawdown(
         2,
 
     )
+
 
 
 # ==================================================
@@ -205,21 +275,29 @@ def _randomize(
 
     method="shuffle",
 
+    rng=None,
+
 ):
 
     if method == "bootstrap":
 
         return bootstrap_trades(
 
-            profits
+            profits,
+
+            rng,
 
         )
 
+
     return shuffle_trades(
 
-        profits
+        profits,
+
+        rng,
 
     )
+
 
 
 # ==================================================
@@ -234,7 +312,17 @@ def run_simulation(
 
     method="shuffle",
 
+    seed=None,
+
 ):
+
+
+    rng = _create_rng(
+
+        seed
+
+    )
+
 
     profits = normalize_trades(
 
@@ -242,13 +330,17 @@ def run_simulation(
 
     )
 
+
     randomized = _randomize(
 
         profits,
 
         method,
 
+        rng,
+
     )
+
 
     equity = simulate_equity(
 
@@ -258,13 +350,16 @@ def run_simulation(
 
     )
 
+
     drawdown = calculate_drawdown(
 
         equity
 
     )
 
+
     return {
+
 
         "final_balance":
 
@@ -276,13 +371,16 @@ def run_simulation(
 
             ),
 
+
         "max_drawdown":
 
             drawdown,
 
+
         "equity":
 
             equity,
+
 
         "trade_count":
 
@@ -292,13 +390,14 @@ def run_simulation(
 
             ),
 
+
         "method":
 
             method,
 
-    }
 
-    # ==================================================
+    }
+# ==================================================
 # MONTE CARLO
 # ==================================================
 
@@ -310,15 +409,39 @@ def run_monte_carlo(
 
     initial_balance=10000,
 
+    method="shuffle",
+
+    seed=None,
+
 ):
 
     results = []
+
+
+    rng = _create_rng(
+
+        seed
+
+    )
+
+
 
     for _ in range(
 
         simulations
 
     ):
+
+
+        simulation_seed = rng.randint(
+
+            0,
+
+            999999999,
+
+        )
+
+
 
         results.append(
 
@@ -328,13 +451,18 @@ def run_monte_carlo(
 
                 initial_balance,
 
-                method="shuffle",
+                method,
+
+                simulation_seed,
 
             )
 
         )
 
+
+
     return results
+
 
 
 # ==================================================
@@ -349,31 +477,25 @@ def run_bootstrap_monte_carlo(
 
     initial_balance=10000,
 
+    seed=None,
+
 ):
 
-    results = []
 
-    for _ in range(
+    return run_monte_carlo(
 
-        simulations
+        trades,
 
-    ):
+        simulations,
 
-        results.append(
+        initial_balance,
 
-            run_simulation(
+        method="bootstrap",
 
-                trades,
+        seed=seed,
 
-                initial_balance,
+    )
 
-                method="bootstrap",
-
-            )
-
-        )
-
-    return results
 
 
 # ==================================================
@@ -386,101 +508,242 @@ def summarize_results(
 
 ):
 
+
     if not results:
+
 
         return {
 
+
             "simulation_count": 0,
+
 
             "average_balance": 0,
 
+
             "average_drawdown": 0,
+
+
+            "best_balance": 0,
+
+
+            "worst_balance": 0,
+
+
+            "worst_drawdown": 0,
+
 
         }
 
+
+
     balances = [
+
 
         item["final_balance"]
 
+
         for item in results
 
+
     ]
+
+
 
     drawdowns = [
 
+
         item["max_drawdown"]
+
 
         for item in results
 
+
     ]
+
+
+
+    equity_paths = [
+
+
+        item["equity"]
+
+
+        for item in results
+
+
+        if "equity" in item
+
+
+    ]
+
+
 
     return {
 
+
         "simulation_count":
+
 
             len(results),
 
+
+
         "average_balance":
 
+
             round(
+
 
                 sum(balances)
 
-                / len(balances),
+                /
+
+                len(balances),
+
 
                 2,
 
+
             ),
+
+
 
         "average_drawdown":
 
+
             round(
+
 
                 sum(drawdowns)
 
-                / len(drawdowns),
+                /
+
+                len(drawdowns),
+
 
                 2,
 
+
             ),
+
+
+
+        "best_balance":
+
+
+            round(
+
+
+                max(balances),
+
+
+                2,
+
+
+            ),
+
+
+
+        "worst_balance":
+
+
+            round(
+
+
+                min(balances),
+
+
+                2,
+
+
+            ),
+
+
+
+        "worst_drawdown":
+
+
+            round(
+
+
+                max(drawdowns),
+
+
+                2,
+
+
+            ),
+
+
+
+        "equity_paths":
+
+
+            len(equity_paths),
+
+
 
     }
 
-    # ==================================================
+
+
+# ==================================================
 # TEST
 # ==================================================
 
 if __name__ == "__main__":
 
+
     class DummyTrade:
+
 
         def __init__(self, profit):
 
             self.profit = profit
 
+
+
     trades = [
+
 
         DummyTrade(5),
 
+
         DummyTrade(-3),
+
 
         DummyTrade(8),
 
+
         DummyTrade(-1),
+
 
         DummyTrade(10),
 
+
         DummyTrade(-6),
+
 
     ]
 
-    print("=" * 60)
-    print("SULTAN QUANT OS")
-    print("MONTE CARLO TEST")
+
+
     print("=" * 60)
 
+    print("SULTAN QUANT OS")
+
+    print("MONTE CARLO ENGINE 6.1")
+
+    print("=" * 60)
+
+
+
     print()
+
+
     print("SHUFFLE MODE")
+
 
     shuffle_results = run_monte_carlo(
 
@@ -488,15 +751,26 @@ if __name__ == "__main__":
 
         simulations=5,
 
+        seed=42,
+
     )
 
+
+
     for index, result in enumerate(
+
 
         shuffle_results,
 
+
         start=1,
 
+
     ):
+
+
+        print()
+
 
         print(
 
@@ -504,89 +778,52 @@ if __name__ == "__main__":
 
         )
 
-        print(
-
-            f"  Method         : {result['method']}"
-
-        )
 
         print(
 
-            f"  Final Balance  : {result['final_balance']}"
+            f" Method        : {result['method']}"
 
         )
+
 
         print(
 
-            f"  Max Drawdown   : {result['max_drawdown']}"
+            f" Balance       : {result['final_balance']}"
 
         )
 
-        print()
 
-    print("=" * 60)
+        print(
+
+            f" Drawdown      : {result['max_drawdown']}"
+
+        )
+
+
 
     print()
-
-    print("BOOTSTRAP MODE")
-
-    bootstrap_results = run_bootstrap_monte_carlo(
-
-        trades,
-
-        simulations=5,
-
-    )
-
-    for index, result in enumerate(
-
-        bootstrap_results,
-
-        start=1,
-
-    ):
-
-        print(
-
-            f"Simulation {index}"
-
-        )
-
-        print(
-
-            f"  Method         : {result['method']}"
-
-        )
-
-        print(
-
-            f"  Final Balance  : {result['final_balance']}"
-
-        )
-
-        print(
-
-            f"  Max Drawdown   : {result['max_drawdown']}"
-
-        )
-
-        print()
 
     print("=" * 60)
 
     print("SUMMARY")
+
     print("=" * 60)
+
+
 
     summary = summarize_results(
 
-        shuffle_results,
+        shuffle_results
 
     )
 
+
+
     for key, value in summary.items():
+
 
         print(
 
-            f"{key:20}: {value}"
+            f"{key:25}: {value}"
 
         )

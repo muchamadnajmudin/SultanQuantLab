@@ -19,6 +19,7 @@ Backward Compatible:
 """
 
 import math
+import statistics
 
 
 # ==================================================
@@ -27,6 +28,7 @@ import math
 
 def empty_analysis():
 
+   
     return {
 
         "simulation_count": 0,
@@ -50,6 +52,19 @@ def empty_analysis():
         "probability_loss": 0,
         "ruin_probability": 0,
 
+       "mean_balance": 0,
+       "std_balance": 0,
+
+       "mean_drawdown": 0,
+       "std_drawdown": 0,
+
+       "confidence_low": 0,
+       "confidence_high": 0,
+
+       "value_at_risk_95": 0,
+       "conditional_var_95": 0,
+
+       "robustness_score": 0,
     }
 
 
@@ -131,6 +146,29 @@ def median(
 
     return ordered[middle]
 
+# ==================================================
+# MEAN
+# ==================================================
+
+def mean(values):
+
+    if not values:
+        return 0
+
+    return sum(values) / len(values)
+
+
+
+# ==================================================
+# STANDARD DEVIATION
+# ==================================================
+
+def standard_deviation(values):
+
+    if len(values) < 2:
+        return 0
+
+    return statistics.stdev(values)
 
 # ==================================================
 # PROBABILITY
@@ -250,6 +288,21 @@ def calculate_balance_metrics(
 
             ),
 
+        "mean_balance":
+
+            round(
+                mean(balances),
+                2,
+            ),
+
+
+        "std_balance":
+
+            round(
+                standard_deviation(balances),
+                2,
+            ),   
+
     }
 
 
@@ -263,11 +316,31 @@ def calculate_drawdown_metrics(
 
 ):
 
+    if not drawdowns:
+
+        return {
+
+            "median_drawdown": 0,
+
+            "worst_drawdown": 0,
+
+            "drawdown_percentile_95": 0,
+
+            "mean_drawdown": 0,
+
+            "std_drawdown": 0,
+
+            "risk_level": "UNKNOWN",
+
+        }
+
+
     worst_drawdown = max(
 
         drawdowns
 
     )
+
 
     if worst_drawdown < 1000:
 
@@ -281,21 +354,22 @@ def calculate_drawdown_metrics(
 
         risk = "HIGH"
 
+
+
     return {
+
 
         "median_drawdown":
 
             round(
 
-                median(
-
-                    drawdowns
-
-                ),
+                median(drawdowns),
 
                 2,
 
             ),
+
+
 
         "worst_drawdown":
 
@@ -306,6 +380,8 @@ def calculate_drawdown_metrics(
                 2,
 
             ),
+
+
 
         "drawdown_percentile_95":
 
@@ -323,12 +399,37 @@ def calculate_drawdown_metrics(
 
             ),
 
+
+
+        "mean_drawdown":
+
+            round(
+
+                mean(drawdowns),
+
+                2,
+
+            ),
+
+
+
+        "std_drawdown":
+
+            round(
+
+                standard_deviation(drawdowns),
+
+                2,
+
+            ),
+
+
+
         "risk_level":
 
             risk,
 
     }
-
 
 # ==================================================
 # PROBABILITY METRICS
@@ -388,7 +489,127 @@ def calculate_probability_metrics(
 
     }
 
-    # ==================================================
+# ==================================================
+# RISK METRICS
+# ==================================================
+
+def calculate_confidence_interval(
+    balances,
+):
+
+    if len(balances) < 2:
+
+        return 0, 0
+
+
+    avg = mean(balances)
+
+    std = standard_deviation(
+        balances
+    )
+
+
+    return (
+
+        round(
+            avg - (1.96 * std),
+            2,
+        ),
+
+        round(
+            avg + (1.96 * std),
+            2,
+        )
+
+    )
+
+
+
+def calculate_var_cvar(
+    balances,
+):
+
+    if not balances:
+
+        return 0, 0
+
+
+    ordered = sorted(
+        balances
+    )
+
+
+    index = int(
+        len(ordered) * 0.05
+    )
+
+
+    var = ordered[index]
+
+
+    tail = [
+
+        x
+
+        for x in ordered
+
+        if x <= var
+
+    ]
+
+
+    if tail:
+
+        cvar = mean(tail)
+
+    else:
+
+        cvar = var
+
+
+    return (
+
+        round(var,2),
+
+        round(cvar,2),
+
+    )
+
+
+
+def calculate_robustness_score(
+    probability_profit,
+    ruin_probability,
+    worst_drawdown,
+):
+
+    score = 100
+
+
+    score -= ruin_probability
+
+
+    if probability_profit < 50:
+
+        score -= 20
+
+
+    if worst_drawdown > 2000:
+
+        score -= 20
+
+
+    elif worst_drawdown > 1000:
+
+        score -= 10
+
+
+    return max(
+        0,
+        round(score,2)
+    )   
+
+# ==================================================
 # ANALYZE MONTE CARLO
 # ==================================================
 
@@ -464,6 +685,32 @@ def analyze_monte_carlo(
 
     )
 
+    confidence_low, confidence_high = calculate_confidence_interval(
+        balances
+    )
+
+
+    value_at_risk_95, conditional_var_95 = calculate_var_cvar(
+        balances
+    )
+
+
+    robustness_score = calculate_robustness_score(
+
+        probability_metrics[
+            "probability_profit"
+        ],
+
+        probability_metrics[
+            "ruin_probability"
+        ],
+
+        drawdown_metrics[
+            "worst_drawdown"
+        ],
+
+    )
+
     analysis = {
 
         "simulation_count":
@@ -534,6 +781,19 @@ def analyze_monte_carlo(
 
             ],
 
+        "mean_balance":
+
+            balance_metrics[
+                "mean_balance"
+            ],
+
+
+        "std_balance":
+
+            balance_metrics[
+                "std_balance"
+            ],   
+
         "median_drawdown":
 
             drawdown_metrics[
@@ -549,6 +809,19 @@ def analyze_monte_carlo(
                 "drawdown_percentile_95"
 
             ],
+
+        "mean_drawdown":
+
+            drawdown_metrics[
+                "mean_drawdown"
+            ],
+
+
+        "std_drawdown":
+
+            drawdown_metrics[
+                "std_drawdown"
+            ],  
 
         "probability_profit":
 
@@ -573,6 +846,30 @@ def analyze_monte_carlo(
                 "ruin_probability"
 
             ],
+
+                    "confidence_low":
+
+            confidence_low,
+
+
+        "confidence_high":
+
+            confidence_high,
+
+
+        "value_at_risk_95":
+
+            value_at_risk_95,
+
+
+        "conditional_var_95":
+
+            conditional_var_95,
+
+
+        "robustness_score":
+
+            robustness_score,
 
     }
 

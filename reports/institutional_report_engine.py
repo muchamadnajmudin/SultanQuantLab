@@ -83,7 +83,6 @@ def value(
 
     return result
 
-
 # ==================================================
 # EXECUTIVE SUMMARY
 # ==================================================
@@ -150,6 +149,14 @@ def executive_summary(
         )
 
         text += (
+            f"Mean Balance        : {value(monte_carlo,'mean_balance')}\n"
+        )
+
+        text += (
+            f"Std Balance         : {value(monte_carlo,'std_balance')}\n"
+        )
+
+        text += (
             f"Best Balance        : {value(monte_carlo,'best_balance')}\n"
         )
 
@@ -165,6 +172,27 @@ def executive_summary(
             f"Monte Carlo Risk    : {value(monte_carlo,'risk_level')}\n"
         )
 
+        text += (
+            f"Robustness Score    : {value(monte_carlo,'robustness_score')}\n"
+        )
+
+        text += (
+            f"Confidence Interval : "
+            f"{value(monte_carlo,'confidence_low')}"
+            f" - "
+            f"{value(monte_carlo,'confidence_high')}\n"
+        )
+
+        text += (
+            f"Value at Risk 95    : "
+            f"{value(monte_carlo,'value_at_risk_95')}\n"
+        )
+
+        text += (
+            f"Conditional VaR 95  : "
+            f"{value(monte_carlo,'conditional_var_95')}\n"
+        )
+
     text += "\n"
 
     # ------------------------------------------
@@ -174,11 +202,13 @@ def executive_summary(
     if wfo:
 
         text += (
-            f"WFO Stability       : {value(wfo,'stability_score')}%\n"
+            f"WFO Stability       : "
+            f"{value(wfo,'stability_score')}%\n"
         )
 
         text += (
-            f"WFO Risk            : {value(wfo,'overfitting_risk')}\n"
+            f"WFO Risk            : "
+            f"{value(wfo,'overfitting_risk')}\n"
         )
 
     return text
@@ -227,7 +257,6 @@ def backtest_section(
 
     return report
 
-
 # ==================================================
 # MONTE CARLO SECTION
 # ==================================================
@@ -254,33 +283,38 @@ def monte_carlo_section(
 
     fields = [
 
+        # Existing
         ("simulation_count", "Simulation Count"),
-
         ("median_balance", "Median Balance"),
-
         ("best_balance", "Best Balance"),
-
         ("worst_balance", "Worst Balance"),
-
         ("worst_drawdown", "Worst Drawdown"),
-
         ("risk_level", "Risk Level"),
 
-        # Sprint 3.3
+        # Sprint 3.1
+        ("balance_percentile_5", "Balance Percentile 5%"),
+        ("balance_percentile_95", "Balance Percentile 95%"),
 
-        ("balance_p5", "Balance P5"),
-
-        ("balance_p95", "Balance P95"),
+        ("mean_balance", "Mean Balance"),
+        ("std_balance", "Std Balance"),
 
         ("median_drawdown", "Median Drawdown"),
+        ("drawdown_percentile_95", "Drawdown Percentile 95%"),
 
-        ("drawdown_p95", "Drawdown P95"),
+        ("mean_drawdown", "Mean Drawdown"),
+        ("std_drawdown", "Std Drawdown"),
 
         ("probability_profit", "Probability Profit"),
-
         ("probability_loss", "Probability Loss"),
-
         ("ruin_probability", "Ruin Probability"),
+
+        ("confidence_low", "Confidence Low"),
+        ("confidence_high", "Confidence High"),
+
+        ("value_at_risk_95", "Value at Risk 95%"),
+        ("conditional_var_95", "Conditional VaR 95%"),
+
+        ("robustness_score", "Robustness Score"),
 
     ]
 
@@ -297,6 +331,7 @@ def monte_carlo_section(
             )
 
     return report
+
 
     # ==================================================
 # WALK FORWARD SECTION
@@ -413,6 +448,68 @@ def risk_section(
 
     return report
 
+# ==================================================
+# METRIC SUMMARY
+# Sprint 3.1
+# ==================================================
+
+def metric_summary(
+
+    monte_carlo,
+
+):
+
+    report = ""
+
+    report += header(
+
+        "MONTE CARLO METRIC SUMMARY"
+
+    )
+
+    if not monte_carlo:
+
+        report += "No Monte Carlo Result\n"
+
+        return report
+
+    report += (
+        f"Mean Balance             : {value(monte_carlo,'mean_balance')}\n"
+    )
+
+    report += (
+        f"Std Balance              : {value(monte_carlo,'std_balance')}\n"
+    )
+
+    report += (
+        f"Mean Drawdown            : {value(monte_carlo,'mean_drawdown')}\n"
+    )
+
+    report += (
+        f"Std Drawdown             : {value(monte_carlo,'std_drawdown')}\n"
+    )
+
+    report += (
+        f"Confidence Low           : {value(monte_carlo,'confidence_low')}\n"
+    )
+
+    report += (
+        f"Confidence High          : {value(monte_carlo,'confidence_high')}\n"
+    )
+
+    report += (
+        f"Value at Risk (95%)      : {value(monte_carlo,'value_at_risk_95')}\n"
+    )
+
+    report += (
+        f"Conditional VaR (95%)    : {value(monte_carlo,'conditional_var_95')}\n"
+    )
+
+    report += (
+        f"Robustness Score         : {value(monte_carlo,'robustness_score')}\n"
+    )
+
+    return report
 
 # ==================================================
 # CONCLUSION
@@ -476,61 +573,72 @@ def conclusion(
 
     )
 
-    report += (
+    robustness = value(
 
+        monte_carlo,
+
+        "robustness_score",
+
+        0,
+
+    )
+
+    report += (
         f"Profit Factor        : {pf}\n"
-
     )
 
     report += (
-
         f"Drawdown (%)         : {dd}\n"
-
     )
 
     report += (
-
         f"WFO Stability (%)    : {stability}\n"
-
     )
 
     report += (
+        f"Monte Carlo Risk     : {mc_risk}\n"
+    )
 
-        f"Monte Carlo Risk     : {mc_risk}\n\n"
-
+    report += (
+        f"Robustness Score     : {robustness}\n\n"
     )
 
     if (
 
-        pf >= 1.5
-        and stability >= 70
+        pf >= 2.0
+        and dd <= 15
+        and stability >= 80
+        and robustness >= 90
         and mc_risk == "LOW"
 
     ):
 
-        report += (
+        assessment = "READY FOR LIVE TRADING"
 
-            "Assessment : READY FOR LIVE TEST\n"
+    elif (
 
-        )
+        pf >= 1.5
+        and stability >= 60
+        and robustness >= 75
+
+    ):
+
+        assessment = "READY FOR FORWARD TEST"
 
     elif pf >= 1.2:
 
-        report += (
-
-            "Assessment : NEEDS FURTHER OPTIMIZATION\n"
-
-        )
+        assessment = "NEEDS FURTHER OPTIMIZATION"
 
     else:
 
-        report += (
+        assessment = "NOT RECOMMENDED"
 
-            "Assessment : NOT RECOMMENDED\n"
-
-        )
+    report += (
+        f"Assessment : {assessment}\n"
+    )
 
     return report
+
 
     # ==================================================
 # MAIN REPORT GENERATOR
@@ -573,6 +681,12 @@ def generate_institutional_report(
     )
 
     report += monte_carlo_section(
+
+        monte_carlo,
+
+    )
+
+    report += metric_summary(
 
         monte_carlo,
 

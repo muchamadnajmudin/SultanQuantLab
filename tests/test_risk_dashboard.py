@@ -46,6 +46,7 @@ def test_risk_dashboard_full_score():
     monte_carlo_analysis = {
 
         "risk_level": "LOW",
+        "robustness_score": 100,
 
     }
 
@@ -118,6 +119,7 @@ def test_risk_dashboard_wfo_failure():
     monte_carlo_analysis = {
 
         "risk_level": "LOW",
+        "robustness_score": 100,
 
     }
 
@@ -177,6 +179,7 @@ def test_risk_dashboard_drawdown_penalty():
     monte_carlo_analysis = {
 
         "risk_level": "LOW",
+        "robustness_score": 100,
 
     }
 

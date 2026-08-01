@@ -139,7 +139,7 @@ def generate_reports(
         statistics
     )
 
-        save_trade_journal(
+    save_trade_journal(
         trades,
         str(TRADE_FILE),
     )
