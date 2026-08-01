@@ -2,7 +2,7 @@
 ==========================================
 SULTAN QUANT OS
 Institutional Report Engine
-Version : 5.2.1
+Version : 5.3.0
 ==========================================
 
 Responsibilities:
@@ -12,12 +12,15 @@ Responsibilities:
 - Merge Monte Carlo
 - Merge Walk Forward
 - Merge Risk Dashboard
+- Merge Strategy Quality Analysis
 - Produce Executive Summary
 
 """
 
 from pathlib import Path
 from datetime import datetime
+
+from analyzer.strategy_analyzer import analyze_strategy
 
 
 # ==================================================
@@ -69,6 +72,7 @@ def value(
 
         return default
 
+
     result = dictionary.get(
 
         key,
@@ -77,11 +81,15 @@ def value(
 
     )
 
+
     if result is None:
 
         return default
 
+
     return result
+
+
 
 # ==================================================
 # EXECUTIVE SUMMARY
@@ -99,11 +107,13 @@ def executive_summary(
 
     text = ""
 
+
     text += header(
 
         "EXECUTIVE SUMMARY"
 
     )
+
 
     text += (
 
@@ -112,27 +122,50 @@ def executive_summary(
 
     )
 
-    text += (
-        f"Net Profit          : {value(statistics,'net_profit')}\n"
-    )
 
     text += (
-        f"Profit Factor       : {value(statistics,'profit_factor')}\n"
+
+        f"Net Profit          : "
+        f"{value(statistics,'net_profit')}\n"
+
     )
 
-    text += (
-        f"Win Rate            : {value(statistics,'win_rate')}%\n"
-    )
 
     text += (
-        f"Max Drawdown        : {value(statistics,'max_drawdown')}\n"
+
+        f"Profit Factor       : "
+        f"{value(statistics,'profit_factor')}\n"
+
     )
 
+
     text += (
-        f"Sharpe Ratio        : {value(statistics,'sharpe_ratio')}\n"
+
+        f"Win Rate            : "
+        f"{value(statistics,'win_rate')}%\n"
+
     )
+
+
+    text += (
+
+        f"Max Drawdown        : "
+        f"{value(statistics,'max_drawdown')}\n"
+
+    )
+
+
+    text += (
+
+        f"Sharpe Ratio        : "
+        f"{value(statistics,'sharpe_ratio')}\n"
+
+    )
+
 
     text += "\n"
+
+
 
     # ------------------------------------------
     # MONTE CARLO SUMMARY
@@ -140,60 +173,108 @@ def executive_summary(
 
     if monte_carlo:
 
-        text += (
-            f"Monte Carlo Runs    : {value(monte_carlo,'simulation_count')}\n"
-        )
 
         text += (
-            f"Median Balance      : {value(monte_carlo,'median_balance')}\n"
+
+            f"Monte Carlo Runs    : "
+            f"{value(monte_carlo,'simulation_count')}\n"
+
         )
 
-        text += (
-            f"Mean Balance        : {value(monte_carlo,'mean_balance')}\n"
-        )
 
         text += (
-            f"Std Balance         : {value(monte_carlo,'std_balance')}\n"
+
+            f"Median Balance      : "
+            f"{value(monte_carlo,'median_balance')}\n"
+
         )
 
-        text += (
-            f"Best Balance        : {value(monte_carlo,'best_balance')}\n"
-        )
 
         text += (
-            f"Worst Balance       : {value(monte_carlo,'worst_balance')}\n"
+
+            f"Mean Balance        : "
+            f"{value(monte_carlo,'mean_balance')}\n"
+
         )
 
-        text += (
-            f"Worst Drawdown      : {value(monte_carlo,'worst_drawdown')}\n"
-        )
 
         text += (
-            f"Monte Carlo Risk    : {value(monte_carlo,'risk_level')}\n"
+
+            f"Std Balance         : "
+            f"{value(monte_carlo,'std_balance')}\n"
+
         )
 
-        text += (
-            f"Robustness Score    : {value(monte_carlo,'robustness_score')}\n"
-        )
 
         text += (
+
+            f"Best Balance        : "
+            f"{value(monte_carlo,'best_balance')}\n"
+
+        )
+
+
+        text += (
+
+            f"Worst Balance       : "
+            f"{value(monte_carlo,'worst_balance')}\n"
+
+        )
+
+
+        text += (
+
+            f"Worst Drawdown      : "
+            f"{value(monte_carlo,'worst_drawdown')}\n"
+
+        )
+
+
+        text += (
+
+            f"Monte Carlo Risk    : "
+            f"{value(monte_carlo,'risk_level')}\n"
+
+        )
+
+
+        text += (
+
+            f"Robustness Score    : "
+            f"{value(monte_carlo,'robustness_score')}\n"
+
+        )
+
+
+        text += (
+
             f"Confidence Interval : "
             f"{value(monte_carlo,'confidence_low')}"
             f" - "
             f"{value(monte_carlo,'confidence_high')}\n"
+
         )
 
+
         text += (
+
             f"Value at Risk 95    : "
             f"{value(monte_carlo,'value_at_risk_95')}\n"
+
         )
+
 
         text += (
+
             f"Conditional VaR 95  : "
             f"{value(monte_carlo,'conditional_var_95')}\n"
+
         )
 
+
     text += "\n"
+
+
 
     # ------------------------------------------
     # WALK FORWARD SUMMARY
@@ -201,15 +282,22 @@ def executive_summary(
 
     if wfo:
 
-        text += (
-            f"WFO Stability       : "
-            f"{value(wfo,'stability_score')}%\n"
-        )
 
         text += (
+
+            f"WFO Stability       : "
+            f"{value(wfo,'stability_score')}%\n"
+
+        )
+
+
+        text += (
+
             f"WFO Risk            : "
             f"{value(wfo,'overfitting_risk')}\n"
+
         )
+
 
     return text
 
@@ -231,11 +319,13 @@ def backtest_section(
 
     )
 
+
     if not statistics:
 
         report += "No Backtest Result\n"
 
         return report
+
 
     for key, value_ in statistics.items():
 
@@ -249,13 +339,17 @@ def backtest_section(
 
             continue
 
+
         report += (
 
             f"{key:25}: {value_}\n"
 
         )
 
+
     return report
+
+
 
 # ==================================================
 # MONTE CARLO SECTION
@@ -275,15 +369,16 @@ def monte_carlo_section(
 
     )
 
+
     if not monte_carlo:
 
         report += "No Monte Carlo Result\n"
 
         return report
 
+
     fields = [
 
-        # Existing
         ("simulation_count", "Simulation Count"),
         ("median_balance", "Median Balance"),
         ("best_balance", "Best Balance"),
@@ -291,7 +386,6 @@ def monte_carlo_section(
         ("worst_drawdown", "Worst Drawdown"),
         ("risk_level", "Risk Level"),
 
-        # Sprint 3.1
         ("balance_percentile_5", "Balance Percentile 5%"),
         ("balance_percentile_95", "Balance Percentile 95%"),
 
@@ -318,6 +412,7 @@ def monte_carlo_section(
 
     ]
 
+
     for key, label in fields:
 
         if key in monte_carlo:
@@ -325,15 +420,16 @@ def monte_carlo_section(
             report += (
 
                 f"{label:25}: "
-
                 f"{monte_carlo[key]}\n"
 
             )
 
+
     return report
 
 
-    # ==================================================
+
+# ==================================================
 # WALK FORWARD SECTION
 # ==================================================
 
@@ -351,11 +447,13 @@ def walk_forward_section(
 
     )
 
+
     if not wfo:
 
         report += "No Walk Forward Result\n"
 
         return report
+
 
     fields = [
 
@@ -371,6 +469,7 @@ def walk_forward_section(
 
     ]
 
+
     for key, label in fields:
 
         if key in wfo:
@@ -378,12 +477,13 @@ def walk_forward_section(
             report += (
 
                 f"{label:25}: "
-
                 f"{wfo[key]}\n"
 
             )
 
+
     return report
+
 
 
 # ==================================================
@@ -404,21 +504,26 @@ def risk_section(
 
     )
 
+
     if not risk:
 
         report += "No Risk Dashboard\n"
 
         return report
 
+
     if isinstance(risk, dict):
 
+
         summary = risk.get("summary")
+
 
         if isinstance(summary, dict):
 
             report += "SUMMARY\n"
 
             report += "-" * 70 + "\n"
+
 
             for key, value_ in summary.items():
 
@@ -428,7 +533,10 @@ def risk_section(
 
                 )
 
+
             report += "\n"
+
+
 
         for key, value_ in risk.items():
 
@@ -436,21 +544,117 @@ def risk_section(
 
                 continue
 
+
             report += (
 
                 f"{key:25}: {value_}\n"
 
             )
 
+
     else:
 
         report += str(risk) + "\n"
 
+
     return report
+
+
+
+# ==================================================
+# STRATEGY QUALITY ANALYSIS
+# ==================================================
+
+def strategy_analysis_section(
+
+    statistics,
+
+    risk=None,
+
+):
+
+    report = ""
+
+    report += header(
+
+        "STRATEGY QUALITY ANALYSIS"
+
+    )
+
+
+    analysis = analyze_strategy(
+
+        statistics,
+
+        risk,
+
+    )
+
+
+    report += (
+
+        f"Score                 : "
+        f"{analysis['score']}\n"
+
+    )
+
+
+    report += (
+
+        f"Grade                 : "
+        f"{analysis['grade']}\n\n"
+
+    )
+
+
+    report += "STRENGTHS\n"
+
+    report += "-" * 70 + "\n"
+
+
+    for item in analysis["strengths"]:
+
+        report += (
+
+            f"- {item}\n"
+
+        )
+
+
+    report += "\nWEAKNESSES\n"
+
+    report += "-" * 70 + "\n"
+
+
+    for item in analysis["weaknesses"]:
+
+        report += (
+
+            f"- {item}\n"
+
+        )
+
+
+    report += "\nRECOMMENDATIONS\n"
+
+    report += "-" * 70 + "\n"
+
+
+    for item in analysis["recommendations"]:
+
+        report += (
+
+            f"- {item}\n"
+
+        )
+
+
+    return report
+
+
 
 # ==================================================
 # METRIC SUMMARY
-# Sprint 3.1
 # ==================================================
 
 def metric_summary(
@@ -467,11 +671,13 @@ def metric_summary(
 
     )
 
+
     if not monte_carlo:
 
         report += "No Monte Carlo Result\n"
 
         return report
+
 
     report += (
         f"Mean Balance             : {value(monte_carlo,'mean_balance')}\n"
@@ -509,9 +715,10 @@ def metric_summary(
         f"Robustness Score         : {value(monte_carlo,'robustness_score')}\n"
     )
 
+
     return report
 
-# ==================================================
+    # ==================================================
 # CONCLUSION
 # ==================================================
 
@@ -533,6 +740,7 @@ def conclusion(
 
     )
 
+
     pf = value(
 
         statistics,
@@ -542,6 +750,7 @@ def conclusion(
         0,
 
     )
+
 
     dd = value(
 
@@ -553,6 +762,7 @@ def conclusion(
 
     )
 
+
     stability = value(
 
         wfo,
@@ -562,6 +772,7 @@ def conclusion(
         0,
 
     )
+
 
     mc_risk = value(
 
@@ -573,6 +784,7 @@ def conclusion(
 
     )
 
+
     robustness = value(
 
         monte_carlo,
@@ -583,64 +795,96 @@ def conclusion(
 
     )
 
+
     report += (
+
         f"Profit Factor        : {pf}\n"
+
     )
 
+
     report += (
+
         f"Drawdown (%)         : {dd}\n"
+
     )
 
+
     report += (
+
         f"WFO Stability (%)    : {stability}\n"
+
     )
 
+
     report += (
+
         f"Monte Carlo Risk     : {mc_risk}\n"
+
     )
 
+
     report += (
+
         f"Robustness Score     : {robustness}\n\n"
+
     )
+
+
 
     if (
 
         pf >= 2.0
+
         and dd <= 15
+
         and stability >= 80
+
         and robustness >= 90
+
         and mc_risk == "LOW"
 
     ):
 
         assessment = "READY FOR LIVE TRADING"
 
+
     elif (
 
         pf >= 1.5
+
         and stability >= 60
+
         and robustness >= 75
 
     ):
 
         assessment = "READY FOR FORWARD TEST"
 
+
     elif pf >= 1.2:
 
         assessment = "NEEDS FURTHER OPTIMIZATION"
+
 
     else:
 
         assessment = "NOT RECOMMENDED"
 
+
+
     report += (
+
         f"Assessment : {assessment}\n"
+
     )
+
 
     return report
 
 
-    # ==================================================
+
+# ==================================================
 # MAIN REPORT GENERATOR
 # ==================================================
 
@@ -658,11 +902,13 @@ def generate_institutional_report(
 
     report = ""
 
+
     report += header(
 
         "SULTAN QUANT OS\nINSTITUTIONAL REPORT"
 
     )
+
 
     report += executive_summary(
 
@@ -674,11 +920,13 @@ def generate_institutional_report(
 
     )
 
+
     report += backtest_section(
 
         statistics,
 
     )
+
 
     report += monte_carlo_section(
 
@@ -686,11 +934,13 @@ def generate_institutional_report(
 
     )
 
+
     report += metric_summary(
 
         monte_carlo,
 
     )
+
 
     report += walk_forward_section(
 
@@ -698,11 +948,22 @@ def generate_institutional_report(
 
     )
 
+
     report += risk_section(
 
         risk,
 
     )
+
+
+    report += strategy_analysis_section(
+
+        statistics,
+
+        risk,
+
+    )
+
 
     report += conclusion(
 
@@ -714,7 +975,9 @@ def generate_institutional_report(
 
     )
 
+
     return report
+
 
 
 # ==================================================
@@ -737,7 +1000,9 @@ def save_institutional_report(
 
     )
 
+
     filename = Path(filename)
+
 
     filename.write_text(
 
@@ -747,7 +1012,9 @@ def save_institutional_report(
 
     )
 
+
     return filename
+
 
 
 # ==================================================
@@ -778,11 +1045,13 @@ def build_institutional_report(
 
     )
 
+
     report_file = save_institutional_report(
 
         report,
 
     )
+
 
     return {
 
