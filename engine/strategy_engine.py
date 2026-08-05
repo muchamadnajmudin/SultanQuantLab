@@ -1,15 +1,25 @@
 """
 ==========================================
-Sultan Quant Lab
-Module : Strategy Engine
-Version : 2.1
+SULTAN QUANT OS
+Strategy Engine
+Version : 3.0.0
 ==========================================
+
+Responsibilities:
+
+- Execute selected strategy
+- Load strategy from registry
+- Keep strategy interface consistent
 """
 
 import pandas as pd
 
-from strategies.xau_strategy import generate_signal
+from strategies.registry import get_strategy
 
+
+# ==================================================
+# RUN STRATEGY
+# ==================================================
 
 def run_strategy(
     df: pd.DataFrame,
@@ -17,23 +27,27 @@ def run_strategy(
     **params,
 ) -> pd.DataFrame:
     """
-    Menjalankan strategy yang dipilih.
+    Execute selected strategy.
 
     Parameters
     ----------
+    df : pd.DataFrame
+        Price data.
+
     strategy : str
-        Nama strategy.
+        Registered strategy name.
+
     params :
-        Parameter yang diteruskan ke strategy.
+        Additional strategy parameters.
+
+    Returns
+    -------
+    pd.DataFrame
     """
 
-    if strategy == "xau_strategy":
+    strategy_callable = get_strategy(strategy)
 
-        return generate_signal(
-            df,
-            **params,
-        )
-
-    raise ValueError(
-        f"Strategy '{strategy}' tidak ditemukan."
+    return strategy_callable(
+        df,
+        **params,
     )

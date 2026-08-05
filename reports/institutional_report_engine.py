@@ -21,7 +21,7 @@ from pathlib import Path
 from datetime import datetime
 
 from analyzer.strategy_analyzer import analyze_strategy
-
+from strategies.registry import list_strategies
 
 # ==================================================
 # OUTPUT
@@ -52,6 +52,69 @@ def header(title: str):
         + "=" * 70
         + "\n"
     )
+
+# ==================================================
+# PORTFOLIO HEADER
+# ==================================================
+
+def portfolio_header(strategy_results=None):
+
+    report = ""
+
+    report += header(
+
+        "PORTFOLIO OVERVIEW"
+
+    )
+
+    if not strategy_results:
+
+        report += "Available Strategies : 0\n"
+        report += "Selected Strategy    : -\n\n"
+
+        return report
+
+    report += (
+        f"Available Strategies : "
+        f"{len(strategy_results)}\n"
+    )
+
+    report += (
+        f"Selected Strategy    : "
+        f"{strategy_results[0]['name']}\n\n"
+    )
+
+    return report 
+
+# ==================================================
+# AVAILABLE STRATEGIES
+# ==================================================
+
+def available_strategies_section():
+
+    report = ""
+
+    report += header(
+
+        "AVAILABLE STRATEGIES"
+
+    )
+
+    strategies = list_strategies()
+
+    if not strategies:
+
+        report += "No Strategy Registered\n"
+
+        return report
+
+    for index, strategy in enumerate(strategies, start=1):
+
+        report += f"{index}. {strategy}\n"
+
+    report += "\n"
+
+    return report--
 
 
 # ==================================================
@@ -909,6 +972,7 @@ def generate_institutional_report(
 
     )
 
+    report += portfolio_header()
 
     report += executive_summary(
 
