@@ -2,7 +2,7 @@
 ==========================================
 SULTAN QUANT OS
 Module : Grid Engine
-Version: 2.0.0
+Version: 2.1.0
 ==========================================
 
 Core grid strategy engine.
@@ -21,6 +21,7 @@ Responsibilities
 - Track maximum capital used
 - Track maximum open layers
 - Support flexible capital per layer
+- Support backward-compatible constructor API
 
 Important
 ---------
@@ -72,6 +73,50 @@ class GridLayer:
     gross_profit: float = 0.0
 
     net_profit: float = 0.0
+
+    # --------------------------------------------------------
+    # BACKWARD-COMPATIBLE PROPERTIES
+    # --------------------------------------------------------
+
+    @property
+    def layer(self) -> int:
+        """
+        Legacy 1-based layer number.
+
+        Example
+        -------
+        index=0 -> layer=1
+        index=1 -> layer=2
+        """
+        return self.index + 1
+
+    @property
+    def tp_price(self) -> Optional[float]:
+        """
+        Optional TP price.
+
+        The actual TP calculation belongs to GridEngine.
+        This property is kept for compatibility with the
+        legacy GridEngine API/tests.
+
+        It is populated dynamically by GridEngine when
+        layers are created.
+        """
+        return getattr(self, "_tp_price", None)
+
+    @tp_price.setter
+    def tp_price(
+        self,
+        value: Optional[float],
+    ) -> None:
+        self._tp_price = value
+
+    @property
+    def profit(self) -> float:
+        """
+        Legacy alias for net profit.
+        """
+        return self.net_profit
 
     # --------------------------------------------------------
     # CLOSE
@@ -138,11 +183,9 @@ class GridConfig:
 
         means:
 
-            Layer 1 -> 1%
-            Layer 2 -> 2%
-            Layer 3 -> 3%
-
-        relative to the previous layer.
+            Layer 1 -> Layer 2 : 1%
+            Layer 2 -> Layer 3 : 2%
+            Layer 3 -> Layer 4 : 3%
 
     tp_percent
         TP percentage above weighted average entry.
@@ -291,26 +334,125 @@ class GridEngine:
     """
     Core stateful grid engine.
 
-    The engine does not know about candles.
+    Preferred API
+    -------------
 
-    It receives price events through:
+        config = GridConfig(
+            spacing=[0.01, 0.02, 0.02],
+            tp_percent=0.01,
+            capital=400,
+            layers=4,
+        )
 
-        open_layer()
-        close_all()
+        engine = GridEngine(config)
 
-    This makes it usable by:
+    Backward-compatible API
+    -----------------------
 
-        - backtest
-        - optimizer
-        - research
-        - paper trading
-        - future live execution adapter
+        engine = GridEngine(
+            layer_spacing=[0.01, 0.02, 0.02],
+            tp_percent=0.01,
+            capital_per_layer=100,
+        )
+
+    The legacy constructor is converted internally into
+    GridConfig.
     """
 
     def __init__(
         self,
-        config: GridConfig,
+        config: Optional[GridConfig] = None,
+        *,
+        layer_spacing: Optional[
+            Sequence[float]
+        ] = None,
+        tp_percent: Optional[float] = None,
+        capital_per_layer: Optional[float] = None,
     ):
+
+        # ====================================================
+        # NEW CONFIG API
+        # ====================================================
+
+        if config is not None:
+
+            if any(
+                value is not None
+                for value in (
+                    layer_spacing,
+                    tp_percent,
+                    capital_per_layer,
+                )
+            ):
+                raise TypeError(
+                    "Use either config or legacy "
+                    "GridEngine arguments, not both"
+                )
+
+            if not isinstance(
+                config,
+                GridConfig,
+            ):
+                raise TypeError(
+                    "config must be a GridConfig"
+                )
+
+        # ====================================================
+        # BACKWARD-COMPATIBLE API
+        # ====================================================
+
+        else:
+
+            if layer_spacing is None:
+                raise TypeError(
+                    "GridEngine requires either "
+                    "config or layer_spacing"
+                )
+
+            if tp_percent is None:
+                raise TypeError(
+                    "tp_percent is required"
+                )
+
+            if capital_per_layer is None:
+                raise TypeError(
+                    "capital_per_layer is required"
+                )
+
+            spacing = [
+                float(x)
+                for x in layer_spacing
+            ]
+
+            target_layers = (
+                len(spacing) + 1
+            )
+
+            capital_per_layer = float(
+                capital_per_layer
+            )
+
+            config = GridConfig(
+                spacing=spacing,
+                tp_percent=float(
+                    tp_percent
+                ),
+                capital=(
+                    capital_per_layer
+                    * target_layers
+                ),
+                layers=target_layers,
+                layer_capital=[
+                    capital_per_layer
+                    for _ in range(
+                        target_layers
+                    )
+                ],
+            )
+
+        # ====================================================
+        # STORE CONFIG
+        # ====================================================
 
         self.config = config
 
@@ -333,9 +475,34 @@ class GridEngine:
             else len(self.spacing) + 1
         )
 
-        self.allocations = (
-            self._build_allocations()
-        )
+        # ====================================================
+        # CAPITAL ALLOCATION
+        # ====================================================
+
+        if config.layer_capital is not None:
+
+            self.allocations = [
+                float(x)
+                for x in config.layer_capital
+            ]
+
+        else:
+
+            default_capital = (
+                self.capital
+                / self.layers_target
+            )
+
+            self.allocations = [
+                default_capital
+                for _ in range(
+                    self.layers_target
+                )
+            ]
+
+        # ====================================================
+        # STATE
+        # ====================================================
 
         self.layers: list[GridLayer] = []
 
@@ -350,46 +517,6 @@ class GridEngine:
         self.max_open_layers = 0
 
         self.max_capital_used = 0.0
-
-    # ========================================================
-    # ALLOCATIONS
-    # ========================================================
-
-    def _build_allocations(
-        self,
-    ) -> list[float]:
-        """
-        Build flexible layer allocations.
-
-        If explicit layer capital is supplied,
-        use it.
-
-        Otherwise distribute total capital
-        equally among layers.
-        """
-
-        if (
-            self.config.layer_capital
-            is not None
-        ):
-
-            return [
-                float(x)
-                for x
-                in self.config.layer_capital
-            ]
-
-        allocation = (
-            self.capital
-            / self.layers_target
-        )
-
-        return [
-            allocation
-            for _ in range(
-                self.layers_target
-            )
-        ]
 
     # ========================================================
     # PROPERTIES
@@ -509,6 +636,33 @@ class GridEngine:
         )
 
     # ========================================================
+    # UPDATE LAYER TP
+    # ========================================================
+
+    def _update_layer_tp_prices(
+        self,
+    ) -> None:
+        """
+        Update compatibility TP values on open layers.
+
+        Legacy tests expect each layer to expose its own
+        TP price based on its entry price.
+
+        The engine-level tp_price remains the weighted
+        average TP for the active grid.
+        """
+
+        for layer in self.open_layers:
+
+            layer.tp_price = (
+                layer.entry_price
+                * (
+                    1.0
+                    + self.tp_percent
+                )
+            )
+
+    # ========================================================
     # NEXT LAYER
     # ========================================================
 
@@ -559,9 +713,14 @@ class GridEngine:
         if index >= self.layers_target:
             return None
 
-        previous = self.layers[-1]
-
         spacing_index = index - 1
+
+        if spacing_index >= len(
+            self.spacing
+        ):
+            return None
+
+        previous = self.layers[-1]
 
         spacing = self.spacing[
             spacing_index
@@ -705,6 +864,8 @@ class GridEngine:
             self.capital_used,
         )
 
+        self._update_layer_tp_prices()
+
         return layer
 
     # ========================================================
@@ -730,6 +891,26 @@ class GridEngine:
         )
 
     # ========================================================
+    # LEGACY START API
+    # ========================================================
+
+    def start(
+        self,
+        price: float,
+        fee_rate: float = 0.0,
+        slippage_rate: float = 0.0,
+    ) -> GridLayer:
+        """
+        Backward-compatible alias for opening the first layer.
+        """
+
+        return self.open_initial_layer(
+            price=price,
+            fee_rate=fee_rate,
+            slippage_rate=slippage_rate,
+        )
+
+    # ========================================================
     # CHECK NEXT LAYER TRIGGER
     # ========================================================
 
@@ -741,8 +922,7 @@ class GridEngine:
         Determine whether the next grid layer
         should be activated.
 
-        Uses the candle low supplied by the
-        backtest engine.
+        Uses the supplied market price/low.
         """
 
         if not self.can_add_layer():
@@ -788,6 +968,104 @@ class GridEngine:
         )
 
     # ========================================================
+    # PROCESS PRICE
+    # ========================================================
+
+    def process_price(
+        self,
+        price: float,
+        fee_rate: float = 0.0,
+        slippage_rate: float = 0.0,
+    ) -> list[GridLayer]:
+        """
+        Backward-compatible price event processor.
+
+        Behavior
+        --------
+        1. Validate price.
+        2. Close the active grid when TP is reached.
+        3. Otherwise add every grid layer whose trigger
+           has been crossed.
+
+        Returns
+        -------
+        list[GridLayer]
+            Layers closed during this event.
+        """
+
+        price = float(price)
+
+        if price <= 0:
+            raise ValueError(
+                "price must be > 0"
+            )
+
+        closed: list[GridLayer] = []
+
+        # ----------------------------------------------------
+        # No initial layer
+        # ----------------------------------------------------
+
+        if not self.layers:
+
+            self.open_initial_layer(
+                price=price,
+                fee_rate=fee_rate,
+                slippage_rate=slippage_rate,
+            )
+
+            return closed
+
+        # ----------------------------------------------------
+        # Take profit
+        # ----------------------------------------------------
+
+        target = self.tp_price
+
+        if (
+            target is not None
+            and price >= target
+        ):
+
+            before = set(
+                id(layer)
+                for layer
+                in self.open_layers
+            )
+
+            self.close_all(
+                price=price,
+                fee_rate=fee_rate,
+                slippage_rate=slippage_rate,
+            )
+
+            closed = [
+                layer
+                for layer in self.closed_layers
+                if id(layer) in before
+            ]
+
+            return closed
+
+        # ----------------------------------------------------
+        # Add all layers whose trigger has been crossed
+        # ----------------------------------------------------
+
+        while self.should_add_layer(
+            price
+        ):
+
+            layer = self.add_next_layer(
+                fee_rate=fee_rate,
+                slippage_rate=slippage_rate,
+            )
+
+            if layer is None:
+                break
+
+        return closed
+
+    # ========================================================
     # CLOSE ALL
     # ========================================================
 
@@ -824,6 +1102,16 @@ class GridEngine:
             slippage_rate
         )
 
+        if fee_rate < 0:
+            raise ValueError(
+                "fee_rate must be >= 0"
+            )
+
+        if slippage_rate < 0:
+            raise ValueError(
+                "slippage_rate must be >= 0"
+            )
+
         execution_price = (
             price
             * (
@@ -846,10 +1134,6 @@ class GridEngine:
             exit_fee = (
                 proceeds
                 * fee_rate
-            )
-
-            before_profit = (
-                layer.gross_profit
             )
 
             net = layer.close(
@@ -1048,8 +1332,14 @@ def create_grid_engine(
             0.0250,
         ],
         tp_percent=0.0075,
-        capital=100.0,
+        capital=400,
         layers=4,
+        layer_capital=[
+            100,
+            100,
+            100,
+            100,
+        ],
     )
     """
 
