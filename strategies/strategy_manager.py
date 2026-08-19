@@ -21,7 +21,7 @@ from engine.backtest_engine import run_backtest
 from engine.statistics_engine import calculate_statistics
 
 from analyzer.strategy_analyzer import analyze_strategy
-from analyzer.strategy_ranker import rank_strategies
+from strategies.intelligence.strategy_ranker import rank_strategies
 
 from strategies.registry import list_strategies
 

@@ -1,4 +1,4 @@
-from analyzer.strategy_ranker import rank_strategies
+from strategies.intelligence.strategy_ranker import rank_strategies
 
 
 def test_strategy_ranker():
