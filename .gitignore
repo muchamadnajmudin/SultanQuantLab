@@ -1,44 +1,194 @@
-# ==========================================
-# Python
-# ==========================================
+# ============================================================
+# SULTAN QUANT OS
+# Git Ignore Configuration
+# ============================================================
+
+
+# ============================================================
+# PYTHON
+# ============================================================
 
 __pycache__/
 *.py[cod]
 *$py.class
+*.pyo
+*.pyd
 
-# Virtual Environment
+
+# ============================================================
+# VIRTUAL ENVIRONMENT
+# ============================================================
+
 venv/
 .venv/
 env/
+ENV/
+env.bak/
+venv.bak/
 
-# Environment Variables
+
+# ============================================================
+# ENVIRONMENT VARIABLES / SECRETS
+# ============================================================
+
 .env
+.env.*
+!.env.example
 
-# IDE
+# Explicit protection for current local file
+.env.txt
+
+
+# ============================================================
+# API KEYS / SECRETS / CREDENTIALS
+# ============================================================
+
+*.key
+*.pem
+*.secret
+secrets/
+credentials/
+credentials.json
+
+
+# ============================================================
+# IDE / EDITOR
+# ============================================================
+
 .vscode/
 .idea/
-
-# Logs
-*.log
-
-# OS
+*.swp
+*.swo
+*~
 .DS_Store
-Thumbs.db
 
-# ==========================================
-# Generated Reports (ignore output only)
-# ==========================================
+
+# ============================================================
+# OPERATING SYSTEM
+# ============================================================
+
+Thumbs.db
+Desktop.ini
+
+
+# ============================================================
+# LOGS
+# ============================================================
+
+*.log
+logs/
+
+
+# ============================================================
+# PYTEST / TEST CACHE
+# ============================================================
+
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.cache/
+
+
+# ============================================================
+# GENERATED REPORT OUTPUT
+# ============================================================
 
 reports/output/
 
-# Generated files
+
+# ============================================================
+# GENERATED FILES
+# ============================================================
+
 *.png
+*.jpg
+*.jpeg
+*.gif
 *.html
 
-# Keep report source code tracked
+
+# ============================================================
+# LOCAL MARKET DATA
+# ============================================================
+
+data/bitget/
+data/cache/
+data/raw/
+data/tmp/
+
+
+# ============================================================
+# BACKTEST / RESEARCH OUTPUT
+# ============================================================
+
+backtest_results/
+backtest_output/
+research_output/
+optimizer_output/
+optimization_results/
+monte_carlo_output/
+wfo_output/
+
+
+# ============================================================
+# TEMPORARY OUTPUT FILES
+# ============================================================
+
+hasil.txt
+output.txt
+output2.txt
+*.tmp
+*.temp
+
+
+# ============================================================
+# JUPYTER / NOTEBOOK
+# ============================================================
+
+.ipynb_checkpoints/
+
+
+# ============================================================
+# BUILD / DISTRIBUTION
+# ============================================================
+
+build/
+dist/
+*.egg-info/
+
+
+# ============================================================
+# LOCAL DATABASE / SQLITE
+# ============================================================
+
+*.db
+*.sqlite
+*.sqlite3
+
+
+# ============================================================
+# GENERATED REPORT SOURCE EXCEPTIONS
+# ============================================================
+# Report source code tetap boleh masuk Git.
+# Jangan gunakan *.html secara global untuk source code
+# jika suatu saat ada template HTML yang memang harus tracked.
+
+!reports/
+!reports/*.py
 !reports/__init__.py
 !reports/report_engine.py
 !reports/report_writer.py
-!reports/csv_exporter.pyhasil.txt
-output.txt
-output2.txt
+!reports/csv_exporter.py
+!reports/institutional_report_engine.py
+!reports/institutional_decision_report.py
+!reports/wfo_report_engine.py
+
+
+# ============================================================
+# KEEP PROJECT STRUCTURE / SOURCE CODE TRACKED
+# ============================================================
+# Source Python tetap dilacak Git.
+# Aturan di atas hanya mengabaikan generated/local artifacts.
