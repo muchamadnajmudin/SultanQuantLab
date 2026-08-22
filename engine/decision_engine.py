@@ -2,7 +2,7 @@
 ==========================================
 SULTAN QUANT OS
 Portfolio Decision Engine
-Version : 3.0.0
+Version : 3.1.0
 ==========================================
 
 Responsibilities:
@@ -67,12 +67,23 @@ def _safe_float(
     value,
     default=0.0,
 ):
+    """
+    Safely convert a value to float.
+
+    Invalid values including NaN are converted to default.
+    """
 
     try:
 
-        return float(
+        result = float(
             value
         )
+
+        if result != result:
+
+            return default
+
+        return result
 
     except (
         TypeError,
@@ -308,10 +319,6 @@ def _extract_wfo(
         risk
     )
 
-    # ----------------------------------------------
-    # RISK -> WFO
-    # ----------------------------------------------
-
     wfo = risk.get(
         "wfo",
         risk.get(
@@ -329,10 +336,6 @@ def _extract_wfo(
     ):
 
         wfo = {}
-
-    # ----------------------------------------------
-    # RISK SUMMARY
-    # ----------------------------------------------
 
     summary = risk.get(
         "summary",
@@ -378,10 +381,6 @@ def _extract_wfo(
             "UNKNOWN",
         ),
     )
-
-    # ----------------------------------------------
-    # STRATEGY FALLBACK
-    # ----------------------------------------------
 
     if (
         stability is None
@@ -532,10 +531,6 @@ def _extract_monte_carlo(
         ),
     )
 
-    # ----------------------------------------------
-    # STRATEGY FALLBACK
-    # ----------------------------------------------
-
     if (
         robustness is None
         or _normalize_status(
@@ -621,10 +616,6 @@ def _evaluate_institutional_gate(
 
     failures = []
 
-    # ----------------------------------------------
-    # PROFIT FACTOR
-    # ----------------------------------------------
-
     pf_pass = (
         pf >= LIVE_MIN_PROFIT_FACTOR
     )
@@ -635,10 +626,6 @@ def _evaluate_institutional_gate(
             "Profit Factor below 2.0"
         )
 
-    # ----------------------------------------------
-    # DRAWDOWN
-    # ----------------------------------------------
-
     drawdown_pass = (
         drawdown <= LIVE_MAX_DRAWDOWN
     )
@@ -648,10 +635,6 @@ def _evaluate_institutional_gate(
         failures.append(
             "Drawdown above 15%"
         )
-
-    # ----------------------------------------------
-    # WFO STABILITY
-    # ----------------------------------------------
 
     wfo_stability = wfo.get(
         "stability"
@@ -669,10 +652,6 @@ def _evaluate_institutional_gate(
             "WFO stability below 80%"
         )
 
-    # ----------------------------------------------
-    # WFO ROBUSTNESS
-    # ----------------------------------------------
-
     wfo_robustness = wfo.get(
         "robustness"
     )
@@ -688,10 +667,6 @@ def _evaluate_institutional_gate(
         failures.append(
             "WFO robustness below 90%"
         )
-
-    # ----------------------------------------------
-    # OVERFITTING
-    # ----------------------------------------------
 
     overfitting_risk = _normalize_status(
         wfo.get(
@@ -714,10 +689,6 @@ def _evaluate_institutional_gate(
             "WFO overfitting risk is high"
         )
 
-    # ----------------------------------------------
-    # MONTE CARLO RISK
-    # ----------------------------------------------
-
     mc_risk = _normalize_status(
         monte_carlo.get(
             "risk",
@@ -736,10 +707,6 @@ def _evaluate_institutional_gate(
             "Monte Carlo risk is not LOW"
         )
 
-    # ----------------------------------------------
-    # MONTE CARLO ROBUSTNESS
-    # ----------------------------------------------
-
     mc_robustness = monte_carlo.get(
         "robustness"
     )
@@ -755,10 +722,6 @@ def _evaluate_institutional_gate(
         failures.append(
             "Monte Carlo robustness below 90%"
         )
-
-    # ----------------------------------------------
-    # PORTFOLIO RISK
-    # ----------------------------------------------
 
     normalized_risk_status = _normalize_status(
         risk_status,
@@ -776,10 +739,6 @@ def _evaluate_institutional_gate(
             "Portfolio risk is HIGH or CRITICAL"
         )
 
-    # ----------------------------------------------
-    # QUALIFIED STRATEGIES
-    # ----------------------------------------------
-
     strategy_pass = (
         qualified_strategies > 0
     )
@@ -789,10 +748,6 @@ def _evaluate_institutional_gate(
         failures.append(
             "No qualified strategy available"
         )
-
-    # ----------------------------------------------
-    # FINAL
-    # ----------------------------------------------
 
     live_ready = not failures
 
@@ -931,10 +886,6 @@ def evaluate_decision(
 
         risk = {}
 
-    # ==================================================
-    # BEST STRATEGY
-    # ==================================================
-
     best = _select_best_strategy(
         results
     )
@@ -981,10 +932,6 @@ def evaluate_decision(
 
         }
 
-    # ==================================================
-    # CORE METRICS
-    # ==================================================
-
     statistics = _safe_dict(
         best.get(
             "statistics",
@@ -1015,10 +962,6 @@ def evaluate_decision(
         default="HIGH",
     )
 
-    # ==================================================
-    # INSTITUTIONAL EVIDENCE
-    # ==================================================
-
     wfo = _extract_wfo(
         risk,
         results,
@@ -1035,10 +978,6 @@ def evaluate_decision(
         )
     )
 
-    # ==================================================
-    # INSTITUTIONAL GATE
-    # ==================================================
-
     gate = _evaluate_institutional_gate(
         pf=pf,
         drawdown=drawdown,
@@ -1047,10 +986,6 @@ def evaluate_decision(
         monte_carlo=monte_carlo,
         qualified_strategies=qualified_strategies,
     )
-
-    # ==================================================
-    # LEGACY DECISION COMPATIBILITY
-    # ==================================================
 
     if risk_status in BLOCKED_RISK_STATUSES:
 
@@ -1113,10 +1048,6 @@ def evaluate_decision(
             "quality threshold."
         )
 
-    # ==================================================
-    # INSTITUTIONAL REASON
-    # ==================================================
-
     if gate["live_ready"]:
 
         reason = (
@@ -1130,15 +1061,7 @@ def evaluate_decision(
             gate["failed_gates"]
         )
 
-    # ==================================================
-    # RETURN
-    # ==================================================
-
     return {
-
-        # ----------------------------------------------
-        # LEGACY
-        # ----------------------------------------------
 
         "decision":
             legacy_decision,
@@ -1172,10 +1095,6 @@ def evaluate_decision(
         "reason":
             reason,
 
-        # ----------------------------------------------
-        # INSTITUTIONAL
-        # ----------------------------------------------
-
         "readiness":
             gate["readiness"],
 
@@ -1191,10 +1110,6 @@ def evaluate_decision(
         "qualified_strategies":
             qualified_strategies,
 
-        # ----------------------------------------------
-        # WFO
-        # ----------------------------------------------
-
         "wfo_stability":
             wfo["stability"],
 
@@ -1203,10 +1118,6 @@ def evaluate_decision(
 
         "overfitting_risk":
             wfo["overfitting_risk"],
-
-        # ----------------------------------------------
-        # MONTE CARLO
-        # ----------------------------------------------
 
         "monte_carlo_risk":
             monte_carlo["risk"],

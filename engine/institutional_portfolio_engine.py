@@ -2,7 +2,7 @@
 ==========================================
 SULTAN QUANT OS
 Institutional Portfolio Engine
-Version : 4.4.0
+Version : 4.5.1
 ==========================================
 
 Responsibilities:
@@ -32,7 +32,13 @@ Institutional Portfolio Engine
     |
     +--> Result Normalization
     |
+    +--> Market Regime Detection
+    |
     +--> Portfolio Allocation
+    |        |
+    |        +--> Strategy Intelligence
+    |        +--> Strategy Memory
+    |        +--> Regime-Aware Allocation
     |
     +--> Portfolio Risk
     |
@@ -94,6 +100,8 @@ def _safe_float(
 ):
     """
     Safely convert a value to float.
+
+    Invalid values including NaN are converted to default.
     """
 
     try:
@@ -708,10 +716,45 @@ def _normalize_allocation(
 def _safe_build_allocation(
     results,
     top_n=3,
+    regime=None,
 ):
     """
     Build portfolio allocation while preserving
-    compatibility with older allocation_engine APIs.
+    compatibility with current and legacy
+    allocation_engine APIs.
+
+    Supported APIs:
+
+        build_allocation(
+            results,
+            max_strategies=top_n,
+            regime=regime,
+        )
+
+        build_allocation(
+            results,
+            max_strategies=top_n,
+        )
+
+        build_allocation(
+            results,
+            top_n=top_n,
+            regime=regime,
+        )
+
+        build_allocation(
+            results,
+            top_n=top_n,
+        )
+
+        build_allocation(
+            results,
+        )
+
+    The regime-aware API is preferred.
+
+    Fallbacks intentionally preserve compatibility with
+    legacy allocation engines and monkeypatched tests.
     """
 
     if not results:
@@ -719,7 +762,132 @@ def _safe_build_allocation(
         return []
 
     # ----------------------------------------------
-    # CURRENT API
+    # NORMALIZE TOP_N
+    # ----------------------------------------------
+
+    try:
+
+        top_n = int(
+            top_n
+        )
+
+    except (
+        TypeError,
+        ValueError,
+    ):
+
+        top_n = 3
+
+    if top_n < 1:
+
+        top_n = 1
+
+    # ----------------------------------------------
+    # NORMALIZE REGIME
+    # ----------------------------------------------
+
+    if not regime:
+
+        regime = UNKNOWN_REGIME
+
+    # ----------------------------------------------
+    # NEW REGIME-AWARE API
+    #
+    # build_allocation(
+    #     results,
+    #     max_strategies=top_n,
+    #     regime=regime,
+    # )
+    # ----------------------------------------------
+
+    try:
+
+        allocation = build_allocation(
+            results,
+            max_strategies=top_n,
+            regime=regime,
+        )
+
+        return _normalize_allocation(
+            allocation
+        )
+
+    except TypeError:
+
+        pass
+
+    except Exception:
+
+        return []
+
+    # ----------------------------------------------
+    # CURRENT API WITHOUT REGIME
+    #
+    # build_allocation(
+    #     results,
+    #     max_strategies=top_n,
+    # )
+    # ----------------------------------------------
+
+    try:
+
+        allocation = build_allocation(
+            results,
+            max_strategies=top_n,
+        )
+
+        return _normalize_allocation(
+            allocation
+        )
+
+    except TypeError:
+
+        pass
+
+    except Exception:
+
+        return []
+
+    # ----------------------------------------------
+    # LEGACY REGIME-AWARE API
+    #
+    # build_allocation(
+    #     results,
+    #     top_n=top_n,
+    #     regime=regime,
+    # )
+    # ----------------------------------------------
+
+    try:
+
+        allocation = build_allocation(
+            results,
+            top_n=top_n,
+            regime=regime,
+        )
+
+        return _normalize_allocation(
+            allocation
+        )
+
+    except TypeError:
+
+        pass
+
+    except Exception:
+
+        return []
+
+    # ----------------------------------------------
+    # BACKWARD-COMPATIBLE API
+    #
+    # build_allocation(
+    #     results,
+    #     top_n=top_n,
+    # )
+    #
+    # Required for legacy implementations and existing
+    # monkeypatched tests.
     # ----------------------------------------------
 
     try:
@@ -742,7 +910,11 @@ def _safe_build_allocation(
         return []
 
     # ----------------------------------------------
-    # LEGACY API
+    # FINAL LEGACY API
+    #
+    # build_allocation(
+    #     results
+    # )
     # ----------------------------------------------
 
     try:
@@ -1013,7 +1185,7 @@ def build_institutional_portfolio(
 
     top_n : int
         Maximum number of strategies considered by
-        allocation engine when supported.
+        allocation engine.
 
     Returns
     -------
@@ -1099,6 +1271,7 @@ def build_institutional_portfolio(
     allocation = _safe_build_allocation(
         results,
         top_n=top_n,
+        regime=regime,
     )
 
     # ==================================================
