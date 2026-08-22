@@ -861,3 +861,304 @@ def test_top_n_forwarded_to_allocation(
     assert captured[
         "top_n"
     ] == 5
+
+
+# ==================================================
+# INSTITUTIONAL PORTFOLIO CONTRACT TESTS
+# ==================================================
+
+def test_institutional_portfolio_contract_keys(
+    monkeypatch,
+):
+
+    import engine.institutional_portfolio_engine as institutional
+
+    monkeypatch.setattr(
+        institutional,
+        "run_portfolio",
+        lambda df: [],
+    )
+
+    result = (
+        institutional.build_institutional_portfolio(
+            object()
+        )
+    )
+
+    expected_keys = {
+
+        "regime",
+
+        "portfolio",
+
+        "best",
+
+        "allocation",
+
+        "risk",
+
+        "decision",
+
+        "exposure",
+
+        "summary",
+
+    }
+
+    assert set(
+        result.keys()
+    ) == expected_keys
+
+
+def test_best_strategy_comes_from_normalized_portfolio(
+    monkeypatch,
+):
+
+    import engine.institutional_portfolio_engine as institutional
+
+    raw_results = [
+
+        {
+            "name":
+                "failed_strategy",
+
+            "error":
+                "strategy failed",
+        },
+
+        {
+            "name":
+                "working_strategy",
+
+            "statistics":
+                {
+                    "total_trade":
+                        10,
+                },
+
+            "score":
+                100,
+        },
+
+    ]
+
+    monkeypatch.setattr(
+        institutional,
+        "run_portfolio",
+        lambda df: raw_results,
+    )
+
+    monkeypatch.setattr(
+        institutional,
+        "get_best_strategy",
+        lambda results: results[1],
+    )
+
+    monkeypatch.setattr(
+        institutional,
+        "build_allocation",
+        lambda *args, **kwargs: [],
+    )
+
+    result = (
+        institutional.build_institutional_portfolio(
+            object()
+        )
+    )
+
+    assert result[
+        "best"
+    ] is not None
+
+    assert result[
+        "best"
+    ][
+        "name"
+    ] == "working_strategy"
+
+    assert result[
+        "best"
+    ][
+        "evaluation_status"
+    ] == institutional.STATUS_SUCCESS
+
+
+def test_failed_strategy_preserves_normalized_contract(
+    monkeypatch,
+):
+
+    import engine.institutional_portfolio_engine as institutional
+
+    monkeypatch.setattr(
+        institutional,
+        "run_portfolio",
+        lambda df: [
+
+            {
+                "name":
+                    "broken_strategy",
+
+                "error":
+                    "execution failed",
+            }
+
+        ],
+    )
+
+    monkeypatch.setattr(
+        institutional,
+        "build_allocation",
+        lambda *args, **kwargs: [],
+    )
+
+    result = (
+        institutional.build_institutional_portfolio(
+            object()
+        )
+    )
+
+    strategy = result[
+        "portfolio"
+    ][0]
+
+    assert strategy[
+        "evaluation_status"
+    ] == institutional.STATUS_FAILED
+
+    assert "rank" in strategy
+
+    assert "score" in strategy
+
+    assert "grade" in strategy
+
+    assert "market_regime" in strategy
+
+    assert "weight" in strategy
+
+    assert "router_recommended" in strategy
+
+
+def test_exposure_matches_normalized_allocation(
+    monkeypatch,
+):
+
+    import engine.institutional_portfolio_engine as institutional
+
+    monkeypatch.setattr(
+        institutional,
+        "run_portfolio",
+        lambda df: [
+
+            {
+                "name":
+                    "strategy_a",
+
+                "statistics":
+                    {
+                        "total_trade":
+                            10,
+                    },
+            }
+
+        ],
+    )
+
+    monkeypatch.setattr(
+        institutional,
+        "build_allocation",
+        lambda *args, **kwargs: [
+
+            {
+                "name":
+                    "strategy_a",
+
+                "allocation":
+                    0.60,
+            },
+
+            {
+                "name":
+                    "strategy_b",
+
+                "weight":
+                    0.40,
+            },
+
+        ],
+    )
+
+    result = (
+        institutional.build_institutional_portfolio(
+            object()
+        )
+    )
+
+    assert result[
+        "exposure"
+    ] == 1.0
+
+
+def test_regime_is_forwarded_to_allocation(
+    monkeypatch,
+):
+
+    import engine.institutional_portfolio_engine as institutional
+
+    captured = {}
+
+    monkeypatch.setattr(
+        institutional,
+        "run_portfolio",
+        lambda df: [
+
+            {
+                "name":
+                    "trend_strategy",
+
+                "statistics":
+                    {
+                        "total_trade":
+                            10,
+                    },
+
+                "market_regime":
+                    "TRENDING",
+            }
+
+        ],
+    )
+
+    def fake_build_allocation(
+        results,
+        max_strategies=3,
+        regime=None,
+    ):
+
+        captured[
+            "regime"
+        ] = regime
+
+        captured[
+            "max_strategies"
+        ] = max_strategies
+
+        return []
+
+    monkeypatch.setattr(
+        institutional,
+        "build_allocation",
+        fake_build_allocation,
+    )
+
+    institutional.build_institutional_portfolio(
+        object(),
+        top_n=2,
+    )
+
+    assert captured[
+        "regime"
+    ] == "TRENDING"
+
+    assert captured[
+        "max_strategies"
+    ] == 2    
