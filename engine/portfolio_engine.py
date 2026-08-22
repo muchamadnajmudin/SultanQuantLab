@@ -2,7 +2,7 @@
 ==========================================
 SULTAN QUANT OS
 Institutional Portfolio Engine
-Version : 4.2.0
+Version : 4.3.0
 ==========================================
 
 Responsibilities:
@@ -18,6 +18,7 @@ Responsibilities:
 - Portfolio Filtering
 - Portfolio Allocation
 - Portfolio Risk
+- Institutional Portfolio Orchestration
 - Return Portfolio Results
 
 Architecture:
@@ -32,9 +33,15 @@ Statistics
         ↓
 Strategy Ranking
         ↓
-Strategy Memory
+Regime-Aware Strategy Memory
         ↓
-Portfolio Results
+Portfolio Candidates
+        ↓
+Adaptive Allocation
+        ↓
+Portfolio Risk
+        ↓
+Institutional Portfolio Result
 
 IMPORTANT:
 
@@ -44,7 +51,24 @@ in strategies.registry by default.
 Market regime and router information are preserved as
 metadata and are NOT allowed to silently remove registered
 strategies from institutional evaluation.
+
+Backward compatibility:
+
+    run_portfolio(df)
+        -> returns list of strategy results
+
+    build_portfolio("TRENDING")
+        -> returns legacy portfolio structure
+
+    build_portfolio(strategy_results)
+        -> returns dynamic portfolio structure
+
+New institutional orchestration:
+
+    build_institutional_portfolio(df)
+        -> returns complete institutional portfolio object
 """
+
 
 from copy import deepcopy
 
@@ -167,6 +191,14 @@ def run_portfolio(df):
     -------
     list
         Ranked strategy results.
+
+    Notes
+    -----
+    This function intentionally preserves its historical
+    return type.
+
+    It returns a list rather than a portfolio dictionary
+    so existing callers remain backward compatible.
     """
 
     results = []
@@ -198,7 +230,8 @@ def run_portfolio(df):
     registered_strategies = list_strategies()
 
     # --------------------------------------------------
-    # Safety: remove duplicates while preserving order
+    # Safety:
+    # Remove duplicates while preserving order.
     # --------------------------------------------------
 
     selected = list(
@@ -428,9 +461,26 @@ def run_portfolio(df):
 
     for item in successful_results:
 
+        # --------------------------------------------------
+        # IMPORTANT:
+        #
+        # Strategy memory is regime-specific.
+        #
+        # The market regime detected during this portfolio
+        # evaluation must be stored with the strategy result.
+        #
+        # Previously update_memory() relied on its default
+        # regime="UNKNOWN", which could collapse all historical
+        # performance into UNKNOWN.
+        # --------------------------------------------------
+
         update_memory(
             item["name"],
             item["statistics"],
+            regime=item.get(
+                "market_regime",
+                regime,
+            ),
         )
 
     # ==================================================
@@ -632,6 +682,7 @@ def qualified_strategies(
         minimum_pf=minimum_pf,
     )
 
+
 # ==================================================
 # BUILD PORTFOLIO
 # ==================================================
@@ -639,17 +690,20 @@ def qualified_strategies(
 def build_portfolio(
     data,
 ):
+
     """
     Build institutional portfolio.
 
     Backward compatibility:
 
     1. Legacy mode
+
        build_portfolio("TRENDING")
 
        Uses default allocation based on market regime.
 
     2. Portfolio mode
+
        build_portfolio(strategy_results)
 
        Uses dynamic allocation based on ranked
@@ -728,5 +782,132 @@ def build_portfolio(
 
         "risk":
             risk,
+
+    }
+
+
+# ==================================================
+# BUILD INSTITUTIONAL PORTFOLIO
+# ==================================================
+
+def build_institutional_portfolio(
+    df,
+):
+
+    """
+    Build complete institutional portfolio.
+
+    This is the new orchestration layer.
+
+    It combines:
+
+        1. Market regime detection
+        2. ALL strategy evaluation
+        3. Strategy ranking
+        4. Regime-aware strategy memory
+        5. Adaptive portfolio allocation
+        6. Portfolio risk
+        7. Portfolio summary
+
+    IMPORTANT:
+
+    run_portfolio(df) remains unchanged in its public
+    return contract and continues returning a list.
+
+    This function returns the complete institutional
+    portfolio object.
+    """
+
+    # ==================================================
+    # RUN ALL STRATEGIES
+    # ==================================================
+
+    results = run_portfolio(
+        df
+    )
+
+    # ==================================================
+    # EMPTY PORTFOLIO
+    # ==================================================
+
+    if not results:
+
+        return {
+
+            "strategies":
+                [],
+
+            "portfolio":
+                {
+
+                    "allocation":
+                        [],
+
+                    "risk":
+                        {},
+
+                },
+
+            "summary":
+                {
+
+                    "total":
+                        0,
+
+                    "evaluated":
+                        0,
+
+                    "best":
+                        None,
+
+                },
+
+            "regime":
+                "UNKNOWN",
+
+        }
+
+    # ==================================================
+    # BUILD DYNAMIC PORTFOLIO
+    # ==================================================
+
+    portfolio = build_portfolio(
+        results
+    )
+
+    # ==================================================
+    # SUMMARY
+    # ==================================================
+
+    summary = portfolio_summary(
+        results
+    )
+
+    # ==================================================
+    # MARKET REGIME
+    # ==================================================
+
+    regime = results[0].get(
+        "market_regime",
+        "UNKNOWN",
+    )
+
+    # ==================================================
+    # RETURN COMPLETE INSTITUTIONAL OBJECT
+    # ==================================================
+
+    return {
+
+        "strategies":
+            results,
+
+        "portfolio":
+            portfolio,
+
+        "summary":
+            summary,
+
+        "regime":
+            regime,
 
     }
