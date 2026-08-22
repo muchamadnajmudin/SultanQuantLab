@@ -2,7 +2,7 @@
 ==========================================
 SULTAN QUANT OS
 Institutional Engine
-Version : 5.2.1
+Version : 5.2.2
 ==========================================
 
 Responsibilities:
@@ -15,6 +15,7 @@ Responsibilities:
 - Generate Institutional Report
 - Generate Portfolio Allocation
 - Generate Portfolio Decision
+- Preserve backward compatibility
 
 Architecture:
 
@@ -33,7 +34,9 @@ from pathlib import Path
 # CONFIG
 # ==================================================
 
-from config.settings import DEFAULT_STRATEGY
+from config.settings import (
+    DEFAULT_STRATEGY,
+)
 
 from config.wfo_settings import (
     WFO_CONFIG,
@@ -45,7 +48,9 @@ from config.wfo_settings import (
 # CORE ENGINES
 # ==================================================
 
-from engine.loader import load_data
+from engine.loader import (
+    load_data,
+)
 
 from engine.indicator_engine import (
     calculate_indicators,
@@ -73,12 +78,8 @@ from engine.visual_engine import (
 
 
 # ==================================================
-# PORTFOLIO ENGINE
+# INSTITUTIONAL PORTFOLIO ENGINE
 # ==================================================
-
-from engine.portfolio_engine import (
-    run_portfolio,
-)
 
 from engine.institutional_portfolio_engine import (
     build_institutional_portfolio,
@@ -252,20 +253,6 @@ def run_portfolio_pipeline(
         - Institutional decision
         - Portfolio exposure
         - Portfolio summary
-
-    Parameters
-    ----------
-    data_file : str or path-like
-        Market data file.
-
-    top_n : int
-        Maximum number of strategies forwarded to the
-        allocation engine.
-
-    Returns
-    -------
-    dict
-        Institutional portfolio contract.
     """
 
     # ==================================================
@@ -307,6 +294,19 @@ def generate_reports(
     Generate standard reports and trade journal.
     """
 
+    # ==================================================
+    # ENSURE OUTPUT DIRECTORY
+    # ==================================================
+
+    OUTPUT_DIR.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    # ==================================================
+    # TEXT REPORT
+    # ==================================================
+
     report = generate_report(
         statistics
     )
@@ -318,9 +318,17 @@ def generate_reports(
         ),
     )
 
+    # ==================================================
+    # HTML REPORT
+    # ==================================================
+
     html_report = generate_html_report(
         statistics
     )
+
+    # ==================================================
+    # TRADE JOURNAL
+    # ==================================================
 
     save_trade_journal(
         trades,
@@ -452,6 +460,7 @@ def run_institutional_report(
 
 def execute_pipeline(
     data_file,
+    top_n=3,
 ):
 
     """
@@ -460,24 +469,42 @@ def execute_pipeline(
     Flow:
 
         Data
-          ↓
+          |
+          v
         Indicators
-          ↓
+          |
+          v
         Portfolio
-          ↓
+          |
+          v
         Best Strategy
-          ↓
+          |
+          v
         Backtest
-          ↓
+          |
+          v
         Statistics
-          ↓
+          |
+          v
         Monte Carlo
-          ↓
+          |
+          v
         Walk Forward Optimization
-          ↓
+          |
+          v
         Risk Dashboard
-          ↓
+          |
+          v
         Institutional Report
+
+    Parameters
+    ----------
+    data_file : str or path-like
+        Market data file.
+
+    top_n : int
+        Maximum number of strategies considered by the
+        portfolio allocation engine.
     """
 
     # ==================================================
@@ -485,7 +512,8 @@ def execute_pipeline(
     # ==================================================
 
     portfolio_result = run_portfolio_pipeline(
-        data_file
+        data_file,
+        top_n=top_n,
     )
 
     portfolio = portfolio_result.get(
@@ -513,9 +541,12 @@ def execute_pipeline(
     # BEST STRATEGY FALLBACK
     # ==================================================
 
-    if best and isinstance(
-        best,
-        dict,
+    if (
+        best
+        and isinstance(
+            best,
+            dict,
+        )
     ):
 
         strategy_name = best.get(
@@ -528,7 +559,7 @@ def execute_pipeline(
         strategy_name = DEFAULT_STRATEGY
 
     # ==================================================
-    # RUN STRATEGY
+    # RUN SELECTED STRATEGY
     # ==================================================
 
     strategy_df = run_strategy(
@@ -544,6 +575,10 @@ def execute_pipeline(
         strategy_df
     )
 
+    # ==================================================
+    # STATISTICS
+    # ==================================================
+
     statistics = calculate_statistics(
         trades
     )
@@ -555,6 +590,14 @@ def execute_pipeline(
     reports = generate_reports(
         statistics,
         trades,
+    )
+
+    # ==================================================
+    # VISUAL REPORTS
+    # ==================================================
+
+    visual_reports = generate_visual_reports(
+        trades
     )
 
     # ==================================================
@@ -622,6 +665,9 @@ def execute_pipeline(
         "reports":
             reports,
 
+        "visual_reports":
+            visual_reports,
+
         "monte_carlo":
             monte_carlo,
 
@@ -653,3 +699,30 @@ def run_institutional(
     return execute_pipeline(
         data_file
     )
+
+
+# ==================================================
+# PUBLIC API
+# ==================================================
+
+__all__ = [
+
+    "run_backtest_pipeline",
+
+    "run_portfolio_pipeline",
+
+    "generate_reports",
+
+    "run_monte_carlo_pipeline",
+
+    "run_wfo_pipeline",
+
+    "run_risk_pipeline",
+
+    "run_institutional_report",
+
+    "execute_pipeline",
+
+    "run_institutional",
+
+]
