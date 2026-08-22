@@ -2,12 +2,14 @@
 ==========================================
 SULTAN QUANT OS
 Portfolio Engine
+Version : 3.3.1
 ==========================================
 
 Responsibilities:
 
 - Execute all registered strategies
 - Detect market regime
+- Normalize regime vocabulary
 - Route recommended strategy
 - Run strategy backtests
 - Calculate strategy statistics
@@ -121,6 +123,121 @@ from risk.portfolio_risk import (
 
 
 # ==================================================
+# REGIME NORMALIZATION
+# ==================================================
+
+def _normalize_market_regime(
+    regime,
+):
+
+    """
+    Normalize market regime vocabulary.
+
+    The project currently contains two compatible
+    regime vocabularies.
+
+    Legacy regime engine:
+
+        TRENDING
+        RANGING
+        HIGH_VOLATILITY
+
+    Institutional market analyzer:
+
+        STRONG_TREND
+        TRENDING
+        RANGE
+        VOLATILE
+        TRANSITION
+
+    This helper converts alternative regime names into
+    the legacy vocabulary expected by:
+
+        - strategy_bias()
+        - default_allocation()
+        - existing strategy memory
+        - existing portfolio callers
+
+    Public function contracts are not changed.
+    """
+
+    if regime is None:
+
+        return "UNKNOWN"
+
+    normalized = str(
+        regime
+    ).strip().upper()
+
+    aliases = {
+
+        # ----------------------------------------------
+        # TRENDING
+        # ----------------------------------------------
+
+        "TRENDING":
+            "TRENDING",
+
+        "STRONG_TREND":
+            "TRENDING",
+
+        "UPTREND":
+            "TRENDING",
+
+        "DOWNTREND":
+            "TRENDING",
+
+
+        # ----------------------------------------------
+        # RANGING
+        # ----------------------------------------------
+
+        "RANGING":
+            "RANGING",
+
+        "RANGE":
+            "RANGING",
+
+        "QUIET_RANGE":
+            "RANGING",
+
+        "SIDEWAYS":
+            "RANGING",
+
+
+        # ----------------------------------------------
+        # HIGH VOLATILITY
+        # ----------------------------------------------
+
+        "HIGH_VOLATILITY":
+            "HIGH_VOLATILITY",
+
+        "VOLATILE":
+            "HIGH_VOLATILITY",
+
+
+        # ----------------------------------------------
+        # UNKNOWN / TRANSITION
+        # ----------------------------------------------
+
+        "TRANSITION":
+            "UNKNOWN",
+
+        "UNCLEAR":
+            "UNKNOWN",
+
+        "UNKNOWN":
+            "UNKNOWN",
+
+    }
+
+    return aliases.get(
+        normalized,
+        normalized,
+    )
+
+
+# ==================================================
 # MARKET REGIME HELPER
 # ==================================================
 
@@ -151,8 +268,12 @@ def _detect_market_regime(
 
     try:
 
-        return detect_regime(
+        regime = detect_regime(
             df.iloc[-1]
+        )
+
+        return _normalize_market_regime(
+            regime
         )
 
     except Exception:
@@ -193,7 +314,9 @@ def _recommended_strategy(
 
     try:
 
-        row = df.iloc[-1]
+        regime = _normalize_market_regime(
+            regime
+        )
 
         preferred = strategy_bias(
             regime,
@@ -846,7 +969,9 @@ def build_portfolio(
         str,
     ):
 
-        regime = data
+        regime = _normalize_market_regime(
+            data
+        )
 
 
         allocation = default_allocation(
@@ -1029,11 +1154,13 @@ def build_institutional_portfolio(
     # MARKET REGIME
     # ==================================================
 
-    regime = results[
-        0
-    ].get(
-        "market_regime",
-        "UNKNOWN",
+    regime = _normalize_market_regime(
+        results[
+            0
+        ].get(
+            "market_regime",
+            "UNKNOWN",
+        )
     )
 
 
