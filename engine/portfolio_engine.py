@@ -2,7 +2,7 @@
 ==========================================
 SULTAN QUANT OS
 Portfolio Engine
-Version : 3.3.1
+Version : 3.3.2
 ==========================================
 
 Responsibilities:
@@ -13,6 +13,7 @@ Responsibilities:
 - Route recommended strategy
 - Run strategy backtests
 - Calculate strategy statistics
+- Classify evaluation status
 - Rank successful strategies
 - Update regime-specific strategy memory
 - Provide legacy portfolio operations
@@ -24,8 +25,16 @@ Institutional portfolio orchestration is owned by:
 
     engine.institutional_portfolio_engine
 
-This module remains responsible for strategy
-evaluation and legacy portfolio operations.
+This module remains responsible for:
+
+    - Strategy evaluation
+    - Strategy ranking
+    - Strategy memory
+    - Legacy portfolio operations
+
+The institutional portfolio contract is owned by:
+
+    engine.institutional_portfolio_engine
 """
 
 from copy import deepcopy
@@ -96,15 +105,6 @@ from strategies.intelligence.strategy_memory import (
 
 
 # ==================================================
-# STRATEGY WEIGHT
-# ==================================================
-
-from strategies.intelligence.strategy_weight import (
-    calculate_weight,
-)
-
-
-# ==================================================
 # DEFAULT ALLOCATION
 # ==================================================
 
@@ -123,7 +123,129 @@ from risk.portfolio_risk import (
 
 
 # ==================================================
-# REGIME NORMALIZATION
+# CONSTANTS
+# ==================================================
+
+STATUS_SUCCESS = "SUCCESS"
+
+STATUS_FAILED = "FAILED"
+
+STATUS_INSUFFICIENT = "INSUFFICIENT_DATA"
+
+UNKNOWN_REGIME = "UNKNOWN"
+
+
+# ==================================================
+# SAFE TRADE COUNT
+# ==================================================
+
+def _get_total_trades(
+    statistics,
+    trades=None,
+):
+    """
+    Safely determine total trade count.
+
+    Priority:
+
+        1. statistics.total_trade
+        2. statistics.total_trades
+        3. len(trades)
+
+    Returns
+    -------
+    int
+    """
+
+    if isinstance(
+        statistics,
+        dict,
+    ):
+
+        value = statistics.get(
+            "total_trade",
+            statistics.get(
+                "total_trades",
+                None,
+            ),
+        )
+
+        if value is not None:
+
+            try:
+
+                return max(
+                    int(
+                        float(
+                            value
+                        )
+                    ),
+                    0,
+                )
+
+            except (
+                TypeError,
+                ValueError,
+            ):
+
+                pass
+
+    if trades is not None:
+
+        try:
+
+            return max(
+                len(
+                    trades
+                ),
+                0,
+            )
+
+        except TypeError:
+
+            pass
+
+    return 0
+
+
+# ==================================================
+# EVALUATION STATUS
+# ==================================================
+
+def _determine_evaluation_status(
+    statistics,
+    trades,
+):
+    """
+    Determine strategy evaluation status.
+
+    Rules:
+
+        Error handling is performed by the caller.
+
+        Successful execution with:
+
+            total trades > 0
+                -> SUCCESS
+
+            total trades == 0
+                -> INSUFFICIENT_DATA
+    """
+
+    total_trades = _get_total_trades(
+        statistics,
+        trades,
+    )
+
+    if total_trades > 0:
+
+        return STATUS_SUCCESS
+
+    return STATUS_INSUFFICIENT
+
+
+# ==================================================
+# MARKET REGIME NORMALIZATION
 # ==================================================
 
 def _normalize_market_regime(
@@ -133,47 +255,30 @@ def _normalize_market_regime(
     """
     Normalize market regime vocabulary.
 
-    The project currently contains two compatible
-    regime vocabularies.
-
-    Legacy regime engine:
+    Legacy vocabulary:
 
         TRENDING
         RANGING
         HIGH_VOLATILITY
 
-    Institutional market analyzer:
+    Institutional vocabulary:
 
         STRONG_TREND
         TRENDING
         RANGE
         VOLATILE
         TRANSITION
-
-    This helper converts alternative regime names into
-    the legacy vocabulary expected by:
-
-        - strategy_bias()
-        - default_allocation()
-        - existing strategy memory
-        - existing portfolio callers
-
-    Public function contracts are not changed.
     """
 
     if regime is None:
 
-        return "UNKNOWN"
+        return UNKNOWN_REGIME
 
     normalized = str(
         regime
     ).strip().upper()
 
     aliases = {
-
-        # ----------------------------------------------
-        # TRENDING
-        # ----------------------------------------------
 
         "TRENDING":
             "TRENDING",
@@ -187,11 +292,6 @@ def _normalize_market_regime(
         "DOWNTREND":
             "TRENDING",
 
-
-        # ----------------------------------------------
-        # RANGING
-        # ----------------------------------------------
-
         "RANGING":
             "RANGING",
 
@@ -204,30 +304,20 @@ def _normalize_market_regime(
         "SIDEWAYS":
             "RANGING",
 
-
-        # ----------------------------------------------
-        # HIGH VOLATILITY
-        # ----------------------------------------------
-
         "HIGH_VOLATILITY":
             "HIGH_VOLATILITY",
 
         "VOLATILE":
             "HIGH_VOLATILITY",
 
-
-        # ----------------------------------------------
-        # UNKNOWN / TRANSITION
-        # ----------------------------------------------
-
         "TRANSITION":
-            "UNKNOWN",
+            UNKNOWN_REGIME,
 
         "UNCLEAR":
-            "UNKNOWN",
+            UNKNOWN_REGIME,
 
         "UNKNOWN":
-            "UNKNOWN",
+            UNKNOWN_REGIME,
 
     }
 
@@ -247,24 +337,23 @@ def _detect_market_regime(
 
     """
     Detect market regime from the latest market row.
-
-    This helper adapts the existing market_regime.py
-    interface to the portfolio engine.
-
-    The portfolio engine does not modify the market
-    regime implementation and does not depend on
-    exchange-specific APIs.
     """
 
     if df is None:
 
-        return "UNKNOWN"
+        return UNKNOWN_REGIME
 
-    if len(
-        df
-    ) == 0:
+    try:
 
-        return "UNKNOWN"
+        if len(
+            df
+        ) == 0:
+
+            return UNKNOWN_REGIME
+
+    except TypeError:
+
+        return UNKNOWN_REGIME
 
     try:
 
@@ -278,11 +367,11 @@ def _detect_market_regime(
 
     except Exception:
 
-        return "UNKNOWN"
+        return UNKNOWN_REGIME
 
 
 # ==================================================
-# RECOMMENDED STRATEGY HELPER
+# RECOMMENDED STRATEGY
 # ==================================================
 
 def _recommended_strategy(
@@ -291,24 +380,23 @@ def _recommended_strategy(
 ):
 
     """
-    Determine the preferred strategy for the
-    detected market regime.
-
-    The existing market_regime.strategy_bias()
-    returns a list of preferred strategies.
-
-    This helper preserves the historical
-    router_strategy concept expected by
-    run_portfolio().
+    Determine the preferred strategy for
+    the detected market regime.
     """
 
     if df is None:
 
         return None
 
-    if len(
-        df
-    ) == 0:
+    try:
+
+        if len(
+            df
+        ) == 0:
+
+            return None
+
+    except TypeError:
 
         return None
 
@@ -319,7 +407,7 @@ def _recommended_strategy(
         )
 
         preferred = strategy_bias(
-            regime,
+            regime
         )
 
         if not preferred:
@@ -342,26 +430,21 @@ def run_portfolio(
 ):
 
     """
-    Execute institutional evaluation for ALL registered
-    strategies.
-
-    Parameters
-    ----------
-    df : pandas.DataFrame
-        Market OHLCV data.
+    Execute evaluation for all registered strategies.
 
     Returns
     -------
     list
-        Ranked strategy results.
 
-    Notes
-    -----
-    This function intentionally preserves its historical
-    return type.
+        Ranked successful strategies first.
 
-    It returns a list rather than a portfolio dictionary
-    so existing callers remain backward compatible.
+        Followed by:
+
+            INSUFFICIENT_DATA strategies
+
+        Followed by:
+
+            FAILED strategies.
     """
 
     results = []
@@ -382,16 +465,15 @@ def run_portfolio(
 
 
     # ==================================================
-    # LOAD ALL REGISTERED STRATEGIES
+    # LOAD STRATEGIES
     # ==================================================
 
     registered_strategies = list_strategies()
 
 
-    # --------------------------------------------------
-    # Safety:
-    # Remove duplicates while preserving order.
-    # --------------------------------------------------
+    # ==================================================
+    # REMOVE DUPLICATES
+    # ==================================================
 
     selected = list(
         dict.fromkeys(
@@ -400,26 +482,18 @@ def run_portfolio(
     )
 
 
-    # ==================================================
-    # FALLBACK
-    # ==================================================
-
     if not selected:
 
         return []
 
 
     # ==================================================
-    # EXECUTE EVERY REGISTERED STRATEGY
+    # EXECUTE STRATEGIES
     # ==================================================
 
     for strategy in selected:
 
         try:
-
-            # ------------------------------------------
-            # Isolate DataFrame
-            # ------------------------------------------
 
             strategy_df = deepcopy(
                 df
@@ -427,7 +501,7 @@ def run_portfolio(
 
 
             # ------------------------------------------
-            # Execute Strategy
+            # STRATEGY
             # ------------------------------------------
 
             strategy_df = run_strategy(
@@ -437,7 +511,7 @@ def run_portfolio(
 
 
             # ------------------------------------------
-            # Backtest
+            # BACKTEST
             # ------------------------------------------
 
             trades = run_backtest(
@@ -446,7 +520,7 @@ def run_portfolio(
 
 
             # ------------------------------------------
-            # Statistics
+            # STATISTICS
             # ------------------------------------------
 
             statistics = calculate_statistics(
@@ -455,25 +529,19 @@ def run_portfolio(
 
 
             # ------------------------------------------
-            # Strategy Weight
+            # STATUS
             # ------------------------------------------
 
-            weight = calculate_weight(
-                statistics
+            evaluation_status = (
+                _determine_evaluation_status(
+                    statistics,
+                    trades,
+                )
             )
 
 
             # ------------------------------------------
-            # Router Flag
-            # ------------------------------------------
-
-            is_router_strategy = (
-                strategy == router_strategy
-            )
-
-
-            # ------------------------------------------
-            # Result
+            # RESULT
             # ------------------------------------------
 
             results.append(
@@ -492,7 +560,7 @@ def run_portfolio(
                         trades,
 
                     "weight":
-                        weight,
+                        0,
 
                     "score":
                         0,
@@ -500,25 +568,20 @@ def run_portfolio(
                     "rank":
                         0,
 
+                    "grade":
+                        "N/A",
+
                     "router_recommended":
-                        is_router_strategy,
+                        strategy == router_strategy,
 
                     "evaluation_status":
-                        "SUCCESS",
+                        evaluation_status,
 
                 }
             )
 
 
         except Exception as exc:
-
-            # --------------------------------------------------
-            # One broken strategy must NOT crash the entire
-            # institutional portfolio evaluation.
-            #
-            # It is recorded as FAILED and the other strategies
-            # continue to be evaluated.
-            # --------------------------------------------------
 
             results.append(
                 {
@@ -544,11 +607,14 @@ def run_portfolio(
                     "rank":
                         0,
 
+                    "grade":
+                        "N/A",
+
                     "router_recommended":
                         strategy == router_strategy,
 
                     "evaluation_status":
-                        "FAILED",
+                        STATUS_FAILED,
 
                     "error":
                         str(
@@ -560,7 +626,7 @@ def run_portfolio(
 
 
     # ==================================================
-    # SEPARATE SUCCESSFUL STRATEGIES
+    # SEPARATE RESULTS
     # ==================================================
 
     successful_results = [
@@ -571,7 +637,20 @@ def run_portfolio(
 
         if item.get(
             "evaluation_status"
-        ) == "SUCCESS"
+        ) == STATUS_SUCCESS
+
+    ]
+
+
+    insufficient_results = [
+
+        item
+
+        for item in results
+
+        if item.get(
+            "evaluation_status"
+        ) == STATUS_INSUFFICIENT
 
     ]
 
@@ -584,13 +663,13 @@ def run_portfolio(
 
         if item.get(
             "evaluation_status"
-        ) == "FAILED"
+        ) == STATUS_FAILED
 
     ]
 
 
     # ==================================================
-    # RANK SUCCESSFUL STRATEGIES
+    # RANK SUCCESSFUL STRATEGIES ONLY
     # ==================================================
 
     if successful_results:
@@ -615,8 +694,15 @@ def run_portfolio(
 
 
     # ==================================================
-    # FAILED STRATEGIES
+    # ZERO RANK FOR NON-SUCCESS
     # ==================================================
+
+    for item in insufficient_results:
+
+        item[
+            "rank"
+        ] = 0
+
 
     for item in failed_results:
 
@@ -626,47 +712,52 @@ def run_portfolio(
 
 
     # ==================================================
-    # FINAL RESULT
+    # UPDATE STRATEGY MEMORY
+    #
+    # Only real successful strategies update memory.
     # ==================================================
 
-    results = (
+    for item in successful_results:
+
+        try:
+
+            update_memory(
+                item[
+                    "name"
+                ],
+
+                item[
+                    "statistics"
+                ],
+
+                regime=item.get(
+                    "market_regime",
+                    regime,
+                ),
+            )
+
+        except Exception:
+
+            pass
+
+
+    # ==================================================
+    # FINAL ORDER
+    # ==================================================
+
+    return (
 
         successful_results
+
+        +
+
+        insufficient_results
 
         +
 
         failed_results
 
     )
-
-
-    # ==================================================
-    # UPDATE STRATEGY MEMORY
-    # ==================================================
-
-    for item in successful_results:
-
-        update_memory(
-            item[
-                "name"
-            ],
-
-            item[
-                "statistics"
-            ],
-
-            regime=item.get(
-                "market_regime",
-                regime,
-            ),
-        )
-
-
-    # ==================================================
-    # RETURN
-    # ==================================================
-
-    return results
 
 
 # ==================================================
@@ -678,7 +769,7 @@ def get_best_strategy(
 ):
 
     """
-    Return the highest ranked successful strategy.
+    Return highest ranked successful strategy.
     """
 
     if not results:
@@ -690,7 +781,7 @@ def get_best_strategy(
 
         if item.get(
             "evaluation_status"
-        ) == "SUCCESS":
+        ) == STATUS_SUCCESS:
 
             return item
 
@@ -707,7 +798,7 @@ def portfolio_summary(
 ):
 
     """
-    Generate a compact portfolio summary.
+    Generate compact portfolio summary.
     """
 
     if not results:
@@ -721,6 +812,9 @@ def portfolio_summary(
                 0,
 
             "failed":
+                0,
+
+            "insufficient":
                 0,
 
             "best":
@@ -737,12 +831,43 @@ def portfolio_summary(
 
         if item.get(
             "evaluation_status"
-        ) == "SUCCESS"
+        ) == STATUS_SUCCESS
 
     ]
 
 
-    if not successful:
+    insufficient = [
+
+        item
+
+        for item in results
+
+        if item.get(
+            "evaluation_status"
+        ) == STATUS_INSUFFICIENT
+
+    ]
+
+
+    failed = [
+
+        item
+
+        for item in results
+
+        if item.get(
+            "evaluation_status"
+        ) == STATUS_FAILED
+
+    ]
+
+
+    best = get_best_strategy(
+        results
+    )
+
+
+    if best is None:
 
         return {
 
@@ -756,18 +881,18 @@ def portfolio_summary(
 
             "failed":
                 len(
-                    results
+                    failed
+                ),
+
+            "insufficient":
+                len(
+                    insufficient
                 ),
 
             "best":
                 None,
 
         }
-
-
-    best = successful[
-        0
-    ]
 
 
     statistics = best.get(
@@ -789,19 +914,16 @@ def portfolio_summary(
             ),
 
         "failed":
-
             len(
-                results
-            )
+                failed
+            ),
 
-            -
-
+        "insufficient":
             len(
-                successful
+                insufficient
             ),
 
         "best":
-
             best.get(
                 "name"
             ),
@@ -824,7 +946,7 @@ def portfolio_summary(
 
             best.get(
                 "market_regime",
-                "UNKNOWN",
+                UNKNOWN_REGIME,
             ),
 
     }
@@ -840,8 +962,8 @@ def profitable_strategies(
 ):
 
     """
-    Return strategies whose Profit Factor is at
-    or above the requested threshold.
+    Return successful strategies whose Profit Factor
+    meets the requested threshold.
     """
 
     if not results:
@@ -857,7 +979,7 @@ def profitable_strategies(
 
         if result.get(
             "evaluation_status"
-        ) == "SUCCESS"
+        ) == STATUS_SUCCESS
 
         and
 
@@ -884,10 +1006,29 @@ def top_strategies(
 ):
 
     """
-    Return top N ranked successful strategies.
+    Return top N successful strategies.
     """
 
     if not results:
+
+        return []
+
+
+    try:
+
+        n = int(
+            n
+        )
+
+    except (
+        TypeError,
+        ValueError,
+    ):
+
+        n = 3
+
+
+    if n <= 0:
 
         return []
 
@@ -900,7 +1041,7 @@ def top_strategies(
 
         if result.get(
             "evaluation_status"
-        ) == "SUCCESS"
+        ) == STATUS_SUCCESS
 
     ]
 
@@ -921,9 +1062,6 @@ def qualified_strategies(
 
     """
     Alias for institutional portfolio filtering.
-
-    This keeps filtering logic explicit for later
-    portfolio construction stages.
     """
 
     return profitable_strategies(
@@ -941,22 +1079,17 @@ def build_portfolio(
 ):
 
     """
-    Build institutional portfolio.
+    Legacy portfolio operation.
 
-    Backward compatibility:
+    Supported modes:
 
-    1. Legacy mode
+    1. build_portfolio("TRENDING")
 
-       build_portfolio("TRENDING")
+       Returns legacy regime allocation.
 
-       Uses default allocation based on market regime.
+    2. build_portfolio(strategy_results)
 
-    2. Portfolio mode
-
-       build_portfolio(strategy_results)
-
-       Uses dynamic allocation based on ranked
-       strategy results.
+       Returns allocation and risk.
     """
 
 
@@ -975,12 +1108,12 @@ def build_portfolio(
 
 
         allocation = default_allocation(
-            regime,
+            regime
         )
 
 
         risk = calculate_portfolio_risk(
-            allocation,
+            allocation
         )
 
 
@@ -1032,12 +1165,12 @@ def build_portfolio(
 
 
     allocation = build_allocation(
-        results,
+        results
     )
 
 
     risk = calculate_portfolio_risk(
-        allocation,
+        allocation
     )
 
 
@@ -1053,7 +1186,7 @@ def build_portfolio(
 
 
 # ==================================================
-# BUILD INSTITUTIONAL PORTFOLIO
+# BACKWARD-COMPATIBLE INSTITUTIONAL PORTFOLIO
 # ==================================================
 
 def build_institutional_portfolio(
@@ -1061,125 +1194,24 @@ def build_institutional_portfolio(
 ):
 
     """
-    Build complete institutional portfolio.
+    Backward-compatible wrapper.
 
-    This function is retained for backward
-    compatibility.
-
-    The primary institutional orchestration is owned
-    by:
+    Institutional portfolio orchestration is owned by:
 
         engine.institutional_portfolio_engine
 
-    This wrapper intentionally preserves the historical
-    public interface of portfolio_engine.
+    This function intentionally delegates to the
+    canonical institutional portfolio engine.
+
+    The import is local to avoid circular imports.
     """
 
+    from engine.institutional_portfolio_engine import (
+        build_institutional_portfolio
+        as _build_institutional_portfolio,
+    )
 
-    # ==================================================
-    # RUN ALL STRATEGIES
-    # ==================================================
 
-    results = run_portfolio(
+    return _build_institutional_portfolio(
         df
     )
-
-
-    # ==================================================
-    # EMPTY PORTFOLIO
-    # ==================================================
-
-    if not results:
-
-        return {
-
-            "strategies":
-                [],
-
-            "portfolio":
-
-                {
-
-                    "allocation":
-                        [],
-
-                    "risk":
-                        {},
-
-                },
-
-            "summary":
-
-                {
-
-                    "total":
-                        0,
-
-                    "evaluated":
-                        0,
-
-                    "failed":
-                        0,
-
-                    "best":
-                        None,
-
-                },
-
-            "regime":
-                "UNKNOWN",
-
-        }
-
-
-    # ==================================================
-    # BUILD DYNAMIC PORTFOLIO
-    # ==================================================
-
-    portfolio = build_portfolio(
-        results
-    )
-
-
-    # ==================================================
-    # SUMMARY
-    # ==================================================
-
-    summary = portfolio_summary(
-        results
-    )
-
-
-    # ==================================================
-    # MARKET REGIME
-    # ==================================================
-
-    regime = _normalize_market_regime(
-        results[
-            0
-        ].get(
-            "market_regime",
-            "UNKNOWN",
-        )
-    )
-
-
-    # ==================================================
-    # RETURN COMPLETE OBJECT
-    # ==================================================
-
-    return {
-
-        "strategies":
-            results,
-
-        "portfolio":
-            portfolio,
-
-        "summary":
-            summary,
-
-        "regime":
-            regime,
-
-    }

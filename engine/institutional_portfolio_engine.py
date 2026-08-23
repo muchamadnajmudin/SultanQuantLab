@@ -2,7 +2,7 @@
 ==========================================
 SULTAN QUANT OS
 Institutional Portfolio Engine
-Version : 4.5.1
+Version : 4.5.2
 ==========================================
 
 Responsibilities:
@@ -17,45 +17,17 @@ Responsibilities:
 - Evaluate institutional portfolio decision
 - Preserve backward compatibility
 
-Architecture:
-
-Market Data
-    |
-    v
-Portfolio Engine
-    |
-    v
-Strategy Results
-    |
-    v
-Institutional Portfolio Engine
-    |
-    +--> Result Normalization
-    |
-    +--> Market Regime Detection
-    |
-    +--> Portfolio Allocation
-    |        |
-    |        +--> Strategy Intelligence
-    |        +--> Strategy Memory
-    |        +--> Regime-Aware Allocation
-    |
-    +--> Portfolio Risk
-    |
-    +--> Portfolio Decision
-    |
-    v
-Institutional Portfolio Result
-
 IMPORTANT:
 
-institutional_portfolio_engine.py is the institutional
-orchestration layer.
+This module is the single source of truth for
+institutional portfolio orchestration.
 
-portfolio_engine.py remains responsible for strategy
-evaluation and legacy portfolio operations.
+portfolio_engine.py remains responsible for:
 
-==========================================
+    - Strategy evaluation
+    - Strategy ranking
+    - Strategy memory
+    - Legacy portfolio operations
 """
 
 from engine.portfolio_engine import (
@@ -98,10 +70,11 @@ def _safe_float(
     value,
     default=0.0,
 ):
-    """
-    Safely convert a value to float.
 
-    Invalid values including NaN are converted to default.
+    """
+    Safely convert value to float.
+
+    Invalid values and NaN return default.
     """
 
     try:
@@ -131,16 +104,17 @@ def _safe_float(
 def _normalize_evaluation_status(
     result,
 ):
+
     """
-    Determine evaluation status for one strategy.
+    Determine evaluation status.
 
     Priority:
 
-    1. Existing evaluation_status
-    2. Explicit error
-    3. Statistics trade count
-    4. Trades collection
-    5. INSUFFICIENT_DATA
+        1. Explicit existing status
+        2. Explicit error
+        3. Statistics trade count
+        4. Trades collection
+        5. INSUFFICIENT_DATA
     """
 
     existing_status = result.get(
@@ -153,9 +127,6 @@ def _normalize_evaluation_status(
             existing_status
         )
 
-    # ----------------------------------------------
-    # FAILED
-    # ----------------------------------------------
 
     if result.get(
         "error"
@@ -163,14 +134,12 @@ def _normalize_evaluation_status(
 
         return STATUS_FAILED
 
-    # ----------------------------------------------
-    # STATISTICS BASED
-    # ----------------------------------------------
 
     statistics = result.get(
         "statistics",
         {},
     )
+
 
     if isinstance(
         statistics,
@@ -184,6 +153,7 @@ def _normalize_evaluation_status(
                 None,
             ),
         )
+
 
         if total_trade is not None:
 
@@ -202,20 +172,19 @@ def _normalize_evaluation_status(
 
                 total_trade = 0
 
+
             if total_trade > 0:
 
                 return STATUS_SUCCESS
 
+
             return STATUS_INSUFFICIENT
 
-    # ----------------------------------------------
-    # TRADES BASED
-    # ----------------------------------------------
 
     trades = result.get(
-        "trades",
-        None,
+        "trades"
     )
+
 
     if trades is not None:
 
@@ -227,11 +196,11 @@ def _normalize_evaluation_status(
 
                 return STATUS_SUCCESS
 
-            return STATUS_INSUFFICIENT
 
         except TypeError:
 
-            return STATUS_INSUFFICIENT
+            pass
+
 
     return STATUS_INSUFFICIENT
 
@@ -243,24 +212,14 @@ def _normalize_evaluation_status(
 def _normalize_portfolio_results(
     results,
 ):
+
     """
-    Guarantee compatibility between legacy portfolio
-    results and the institutional portfolio contract.
-
-    Every valid strategy result receives:
-
-        evaluation_status
-        rank
-        score
-        grade
-        market_regime
-        weight
-        router_recommended
-
-    Existing strategy metadata is preserved.
+    Normalize all strategy results to the stable
+    institutional contract.
     """
 
     normalized_results = []
+
 
     if not isinstance(
         results,
@@ -268,6 +227,7 @@ def _normalize_portfolio_results(
     ):
 
         return normalized_results
+
 
     for item in results:
 
@@ -278,11 +238,13 @@ def _normalize_portfolio_results(
 
             continue
 
+
         result = item.copy()
 
-        # ------------------------------------------
-        # EVALUATION STATUS
-        # ------------------------------------------
+
+        # ==============================================
+        # STATUS
+        # ==============================================
 
         result[
             "evaluation_status"
@@ -290,9 +252,10 @@ def _normalize_portfolio_results(
             result
         )
 
-        # ------------------------------------------
-        # SAFE DEFAULTS
-        # ------------------------------------------
+
+        # ==============================================
+        # DEFAULTS
+        # ==============================================
 
         result.setdefault(
             "rank",
@@ -324,31 +287,28 @@ def _normalize_portfolio_results(
             False,
         )
 
-        # ------------------------------------------
-        # NORMALIZE NUMERIC FIELDS
-        # ------------------------------------------
+
+        # ==============================================
+        # NUMERIC NORMALIZATION
+        # ==============================================
 
         result[
             "score"
         ] = _safe_float(
             result.get(
-                "score",
-                0,
+                "score"
             )
         )
+
 
         result[
             "weight"
         ] = _safe_float(
             result.get(
-                "weight",
-                0,
+                "weight"
             )
         )
 
-        # ------------------------------------------
-        # NORMALIZE RANK
-        # ------------------------------------------
 
         try:
 
@@ -372,9 +332,10 @@ def _normalize_portfolio_results(
                 "rank"
             ] = 0
 
-        # ------------------------------------------
-        # MARKET REGIME
-        # ------------------------------------------
+
+        # ==============================================
+        # REGIME
+        # ==============================================
 
         if not result.get(
             "market_regime"
@@ -384,9 +345,10 @@ def _normalize_portfolio_results(
                 "market_regime"
             ] = UNKNOWN_REGIME
 
-        # ------------------------------------------
+
+        # ==============================================
         # ROUTER FLAG
-        # ------------------------------------------
+        # ==============================================
 
         result[
             "router_recommended"
@@ -397,35 +359,26 @@ def _normalize_portfolio_results(
             )
         )
 
+
         normalized_results.append(
             result
         )
+
 
     return normalized_results
 
 
 # ==================================================
-# SAFE MARKET REGIME
+# DETECT REGIME
 # ==================================================
 
 def _detect_regime(
     results,
 ):
+
     """
-    Extract market regime from normalized strategy
-    results.
-
-    Priority:
-
-    1. market_regime
-    2. regime
-    3. metadata.market_regime
-    4. metadata.regime
+    Extract market regime from normalized results.
     """
-
-    if not results:
-
-        return UNKNOWN_REGIME
 
     if not isinstance(
         results,
@@ -434,9 +387,6 @@ def _detect_regime(
 
         return UNKNOWN_REGIME
 
-    # ----------------------------------------------
-    # DIRECT REGIME
-    # ----------------------------------------------
 
     for item in results:
 
@@ -447,9 +397,11 @@ def _detect_regime(
 
             continue
 
+
         regime = item.get(
             "market_regime"
         )
+
 
         if (
             regime
@@ -460,9 +412,11 @@ def _detect_regime(
                 regime
             )
 
+
         regime = item.get(
             "regime"
         )
+
 
         if regime:
 
@@ -470,9 +424,6 @@ def _detect_regime(
                 regime
             )
 
-    # ----------------------------------------------
-    # NESTED METADATA
-    # ----------------------------------------------
 
     for item in results:
 
@@ -483,9 +434,11 @@ def _detect_regime(
 
             continue
 
+
         metadata = item.get(
             "metadata"
         )
+
 
         if not isinstance(
             metadata,
@@ -494,25 +447,30 @@ def _detect_regime(
 
             continue
 
+
         regime = metadata.get(
             "market_regime"
         )
+
 
         if regime:
 
             return str(
                 regime
             )
+
 
         regime = metadata.get(
             "regime"
         )
 
+
         if regime:
 
             return str(
                 regime
             )
+
 
     return UNKNOWN_REGIME
 
@@ -524,9 +482,6 @@ def _detect_regime(
 def _safe_run_portfolio(
     df,
 ):
-    """
-    Safely execute the underlying portfolio engine.
-    """
 
     try:
 
@@ -538,12 +493,14 @@ def _safe_run_portfolio(
 
         return []
 
+
     if not isinstance(
         results,
         list,
     ):
 
         return []
+
 
     return results
 
@@ -555,13 +512,15 @@ def _safe_run_portfolio(
 def _safe_get_best_strategy(
     results,
 ):
+
     """
-    Safely obtain best strategy.
+    Obtain best strategy from normalized results.
     """
 
     if not results:
 
         return None
+
 
     try:
 
@@ -573,6 +532,15 @@ def _safe_get_best_strategy(
 
         return None
 
+
+    if not isinstance(
+        best,
+        dict,
+    ):
+
+        return None
+
+
     return best
 
 
@@ -583,9 +551,6 @@ def _safe_get_best_strategy(
 def _normalize_allocation_item(
     item,
 ):
-    """
-    Normalize one allocation item.
-    """
 
     if not isinstance(
         item,
@@ -594,9 +559,11 @@ def _normalize_allocation_item(
 
         return None
 
+
     normalized = dict(
         item
     )
+
 
     if "allocation" in normalized:
 
@@ -608,6 +575,7 @@ def _normalize_allocation_item(
             )
         )
 
+
     elif "weight" in normalized:
 
         normalized[
@@ -617,6 +585,7 @@ def _normalize_allocation_item(
                 "weight"
             )
         )
+
 
     elif "weight_pct" in normalized:
 
@@ -628,11 +597,13 @@ def _normalize_allocation_item(
             )
         )
 
+
     else:
 
         normalized[
             "allocation"
         ] = 0.0
+
 
     return normalized
 
@@ -644,17 +615,15 @@ def _normalize_allocation_item(
 def _normalize_allocation(
     allocation,
 ):
+
     """
-    Guarantee allocation is always returned as a list.
+    Normalize allocation to a stable list contract.
     """
 
     if allocation is None:
 
         return []
 
-    # ----------------------------------------------
-    # LIST
-    # ----------------------------------------------
 
     if isinstance(
         allocation,
@@ -662,6 +631,7 @@ def _normalize_allocation(
     ):
 
         normalized = []
+
 
         for item in allocation:
 
@@ -671,17 +641,16 @@ def _normalize_allocation(
                 )
             )
 
+
             if normalized_item is not None:
 
                 normalized.append(
                     normalized_item
                 )
 
+
         return normalized
 
-    # ----------------------------------------------
-    # DICT
-    # ----------------------------------------------
 
     if isinstance(
         allocation,
@@ -690,10 +659,12 @@ def _normalize_allocation(
 
         normalized = []
 
+
         for name, weight in allocation.items():
 
             normalized.append(
                 {
+
                     "name":
                         name,
 
@@ -701,10 +672,13 @@ def _normalize_allocation(
                         _safe_float(
                             weight
                         ),
+
                 }
             )
 
+
         return normalized
+
 
     return []
 
@@ -718,52 +692,20 @@ def _safe_build_allocation(
     top_n=3,
     regime=None,
 ):
+
     """
-    Build portfolio allocation while preserving
-    compatibility with current and legacy
-    allocation_engine APIs.
+    Build allocation while preserving compatibility with:
 
-    Supported APIs:
-
-        build_allocation(
-            results,
-            max_strategies=top_n,
-            regime=regime,
-        )
-
-        build_allocation(
-            results,
-            max_strategies=top_n,
-        )
-
-        build_allocation(
-            results,
-            top_n=top_n,
-            regime=regime,
-        )
-
-        build_allocation(
-            results,
-            top_n=top_n,
-        )
-
-        build_allocation(
-            results,
-        )
-
-    The regime-aware API is preferred.
-
-    Fallbacks intentionally preserve compatibility with
-    legacy allocation engines and monkeypatched tests.
+        Current regime-aware API
+        Current API
+        Legacy API
+        Monkeypatched tests
     """
 
     if not results:
 
         return []
 
-    # ----------------------------------------------
-    # NORMALIZE TOP_N
-    # ----------------------------------------------
 
     try:
 
@@ -778,158 +720,68 @@ def _safe_build_allocation(
 
         top_n = 3
 
+
     if top_n < 1:
 
         top_n = 1
 
-    # ----------------------------------------------
-    # NORMALIZE REGIME
-    # ----------------------------------------------
 
     if not regime:
 
         regime = UNKNOWN_REGIME
 
-    # ----------------------------------------------
-    # NEW REGIME-AWARE API
-    #
-    # build_allocation(
-    #     results,
-    #     max_strategies=top_n,
-    #     regime=regime,
-    # )
-    # ----------------------------------------------
 
-    try:
+    attempts = [
 
-        allocation = build_allocation(
+        lambda: build_allocation(
             results,
             max_strategies=top_n,
             regime=regime,
-        )
+        ),
 
-        return _normalize_allocation(
-            allocation
-        )
-
-    except TypeError:
-
-        pass
-
-    except Exception:
-
-        return []
-
-    # ----------------------------------------------
-    # CURRENT API WITHOUT REGIME
-    #
-    # build_allocation(
-    #     results,
-    #     max_strategies=top_n,
-    # )
-    # ----------------------------------------------
-
-    try:
-
-        allocation = build_allocation(
+        lambda: build_allocation(
             results,
             max_strategies=top_n,
-        )
+        ),
 
-        return _normalize_allocation(
-            allocation
-        )
-
-    except TypeError:
-
-        pass
-
-    except Exception:
-
-        return []
-
-    # ----------------------------------------------
-    # LEGACY REGIME-AWARE API
-    #
-    # build_allocation(
-    #     results,
-    #     top_n=top_n,
-    #     regime=regime,
-    # )
-    # ----------------------------------------------
-
-    try:
-
-        allocation = build_allocation(
+        lambda: build_allocation(
             results,
             top_n=top_n,
             regime=regime,
-        )
+        ),
 
-        return _normalize_allocation(
-            allocation
-        )
-
-    except TypeError:
-
-        pass
-
-    except Exception:
-
-        return []
-
-    # ----------------------------------------------
-    # BACKWARD-COMPATIBLE API
-    #
-    # build_allocation(
-    #     results,
-    #     top_n=top_n,
-    # )
-    #
-    # Required for legacy implementations and existing
-    # monkeypatched tests.
-    # ----------------------------------------------
-
-    try:
-
-        allocation = build_allocation(
+        lambda: build_allocation(
             results,
             top_n=top_n,
-        )
+        ),
 
-        return _normalize_allocation(
-            allocation
-        )
-
-    except TypeError:
-
-        pass
-
-    except Exception:
-
-        return []
-
-    # ----------------------------------------------
-    # FINAL LEGACY API
-    #
-    # build_allocation(
-    #     results
-    # )
-    # ----------------------------------------------
-
-    try:
-
-        allocation = build_allocation(
+        lambda: build_allocation(
             results
-        )
+        ),
 
-    except Exception:
+    ]
 
-        return []
 
-    return _normalize_allocation(
-        allocation
-    )
+    for attempt in attempts:
+
+        try:
+
+            allocation = attempt()
+
+            return _normalize_allocation(
+                allocation
+            )
+
+        except TypeError:
+
+            continue
+
+        except Exception:
+
+            return []
+
+
+    return []
 
 
 # ==================================================
@@ -939,39 +791,36 @@ def _safe_build_allocation(
 def _calculate_exposure(
     allocation,
 ):
+
     """
-    Calculate total portfolio exposure.
+    Calculate total normalized portfolio exposure.
     """
 
     if not allocation:
 
         return 0.0
 
-    # ----------------------------------------------
-    # DICT
-    # ----------------------------------------------
 
     if isinstance(
         allocation,
         dict,
     ):
 
-        exposure = 0.0
-
-        for value in allocation.values():
-
-            exposure += _safe_float(
-                value
-            )
-
         return round(
-            exposure,
+
+            sum(
+                _safe_float(
+                    value
+                )
+
+                for value
+
+                in allocation.values()
+            ),
+
             4,
         )
 
-    # ----------------------------------------------
-    # LIST
-    # ----------------------------------------------
 
     if isinstance(
         allocation,
@@ -979,6 +828,7 @@ def _calculate_exposure(
     ):
 
         exposure = 0.0
+
 
         for item in allocation:
 
@@ -989,36 +839,26 @@ def _calculate_exposure(
 
                 continue
 
-            if "allocation" in item:
-
-                value = item.get(
-                    "allocation"
-                )
-
-            elif "weight" in item:
-
-                value = item.get(
-                    "weight"
-                )
-
-            elif "weight_pct" in item:
-
-                value = item.get(
-                    "weight_pct"
-                )
-
-            else:
-
-                value = 0.0
 
             exposure += _safe_float(
-                value
+                item.get(
+                    "allocation",
+                    item.get(
+                        "weight",
+                        item.get(
+                            "weight_pct",
+                            0,
+                        ),
+                    ),
+                )
             )
+
 
         return round(
             exposure,
             4,
         )
+
 
     return 0.0
 
@@ -1030,13 +870,11 @@ def _calculate_exposure(
 def _safe_calculate_portfolio_risk(
     allocation,
 ):
-    """
-    Safely calculate portfolio risk.
-    """
 
     if not allocation:
 
         return {}
+
 
     try:
 
@@ -1048,6 +886,7 @@ def _safe_calculate_portfolio_risk(
 
         return {}
 
+
     if isinstance(
         risk,
         dict,
@@ -1055,23 +894,18 @@ def _safe_calculate_portfolio_risk(
 
         return risk
 
+
     return {}
 
 
 # ==================================================
-# SAFE PORTFOLIO DECISION
+# SAFE DECISION
 # ==================================================
 
 def _safe_evaluate_decision(
     risk,
     results,
 ):
-    """
-    Safely evaluate institutional portfolio decision.
-
-    Decision Engine remains the owner of the actual
-    decision logic.
-    """
 
     try:
 
@@ -1084,6 +918,7 @@ def _safe_evaluate_decision(
 
         return {}
 
+
     if isinstance(
         decision,
         dict,
@@ -1091,23 +926,22 @@ def _safe_evaluate_decision(
 
         return decision
 
+
     return {}
 
 
 # ==================================================
-# SAFE PORTFOLIO SUMMARY
+# SAFE SUMMARY
 # ==================================================
 
 def _safe_portfolio_summary(
     results,
 ):
-    """
-    Safely generate portfolio summary.
-    """
 
     if not results:
 
         return {}
+
 
     try:
 
@@ -1119,6 +953,7 @@ def _safe_portfolio_summary(
 
         return {}
 
+
     if isinstance(
         summary,
         dict,
@@ -1126,18 +961,15 @@ def _safe_portfolio_summary(
 
         return summary
 
+
     return {}
 
 
 # ==================================================
-# EMPTY INSTITUTIONAL PORTFOLIO
+# EMPTY CONTRACT
 # ==================================================
 
 def _empty_institutional_portfolio():
-    """
-    Return the stable empty institutional portfolio
-    contract.
-    """
 
     return {
 
@@ -1164,6 +996,7 @@ def _empty_institutional_portfolio():
 
         "summary":
             {},
+
     }
 
 
@@ -1175,45 +1008,18 @@ def build_institutional_portfolio(
     df,
     top_n=3,
 ):
+
     """
     Build complete institutional portfolio.
 
-    Parameters
-    ----------
-    df : pandas.DataFrame
-        Market OHLCV data.
-
-    top_n : int
-        Maximum number of strategies considered by
-        allocation engine.
-
-    Returns
-    -------
-    dict
-
-        {
-            "regime": str,
-            "portfolio": list,
-            "best": dict | None,
-            "allocation": list,
-            "risk": dict,
-            "decision": dict,
-            "exposure": float,
-            "summary": dict,
-        }
+    This is the canonical institutional portfolio
+    orchestration entry point.
     """
-
-    # ==================================================
-    # SAFE EMPTY RESULT
-    # ==================================================
 
     if df is None:
 
         return _empty_institutional_portfolio()
 
-    # ==================================================
-    # NORMALIZE TOP_N
-    # ==================================================
 
     try:
 
@@ -1228,25 +1034,29 @@ def build_institutional_portfolio(
 
         top_n = 3
 
+
     if top_n < 1:
 
         top_n = 1
 
+
     # ==================================================
-    # RUN STRATEGY PORTFOLIO
+    # STRATEGY EVALUATION
     # ==================================================
 
     results = _safe_run_portfolio(
         df
     )
 
+
     # ==================================================
-    # NORMALIZE PORTFOLIO RESULTS
+    # NORMALIZATION
     # ==================================================
 
     results = _normalize_portfolio_results(
         results
     )
+
 
     # ==================================================
     # MARKET REGIME
@@ -1256,16 +1066,20 @@ def build_institutional_portfolio(
         results
     )
 
+
     # ==================================================
     # BEST STRATEGY
+    #
+    # Uses normalized results.
     # ==================================================
 
     best = _safe_get_best_strategy(
         results
     )
 
+
     # ==================================================
-    # PORTFOLIO ALLOCATION
+    # ALLOCATION
     # ==================================================
 
     allocation = _safe_build_allocation(
@@ -1274,16 +1088,18 @@ def build_institutional_portfolio(
         regime=regime,
     )
 
+
     # ==================================================
-    # PORTFOLIO RISK
+    # RISK
     # ==================================================
 
     risk = _safe_calculate_portfolio_risk(
         allocation
     )
 
+
     # ==================================================
-    # PORTFOLIO DECISION
+    # DECISION
     # ==================================================
 
     decision = _safe_evaluate_decision(
@@ -1291,25 +1107,24 @@ def build_institutional_portfolio(
         results,
     )
 
+
     # ==================================================
-    # PORTFOLIO EXPOSURE
+    # EXPOSURE
     # ==================================================
 
     exposure = _calculate_exposure(
         allocation
     )
 
+
     # ==================================================
-    # PORTFOLIO SUMMARY
+    # SUMMARY
     # ==================================================
 
     summary = _safe_portfolio_summary(
         results
     )
 
-    # ==================================================
-    # RETURN
-    # ==================================================
 
     return {
 
@@ -1336,6 +1151,7 @@ def build_institutional_portfolio(
 
         "summary":
             summary,
+
     }
 
 
@@ -1347,10 +1163,6 @@ def run_institutional_portfolio(
     df,
     top_n=3,
 ):
-    """
-    Backward-compatible alias for
-    build_institutional_portfolio().
-    """
 
     return build_institutional_portfolio(
         df,
@@ -1359,17 +1171,13 @@ def run_institutional_portfolio(
 
 
 # ==================================================
-# BUILD PORTFOLIO WRAPPER
+# BUILD PORTFOLIO FROM DATA
 # ==================================================
 
 def build_portfolio_from_data(
     df,
     top_n=3,
 ):
-    """
-    Execute institutional portfolio construction
-    directly from market data.
-    """
 
     return build_institutional_portfolio(
         df,

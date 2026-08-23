@@ -2,7 +2,7 @@
 ==========================================
 SULTAN QUANT OS
 Institutional Engine
-Version : 5.2.2
+Version : 5.2.3
 ==========================================
 
 Responsibilities:
@@ -15,7 +15,6 @@ Responsibilities:
 - Generate Institutional Report
 - Generate Portfolio Allocation
 - Generate Portfolio Decision
-- Preserve backward compatibility
 
 Architecture:
 
@@ -78,7 +77,7 @@ from engine.visual_engine import (
 
 
 # ==================================================
-# INSTITUTIONAL PORTFOLIO ENGINE
+# PORTFOLIO ENGINE
 # ==================================================
 
 from engine.institutional_portfolio_engine import (
@@ -167,19 +166,11 @@ TRADE_FILE = (
 # ==================================================
 
 def run_backtest_pipeline(
-    data_file: str,
+    data_file,
 ):
 
     """
     Execute the standard backtest pipeline.
-
-    Steps:
-
-        1. Load market data
-        2. Calculate indicators
-        3. Execute default strategy
-        4. Run backtest
-        5. Calculate statistics
     """
 
     df = load_data(
@@ -190,13 +181,13 @@ def run_backtest_pipeline(
         df
     )
 
-    df = run_strategy(
+    strategy_df = run_strategy(
         df,
         strategy=DEFAULT_STRATEGY,
     )
 
     trades = run_backtest(
-        df
+        strategy_df
     )
 
     statistics = calculate_statistics(
@@ -218,6 +209,29 @@ def run_backtest_pipeline(
 
 
 # ==================================================
+# INTERNAL PORTFOLIO FROM DATAFRAME
+# ==================================================
+
+def _run_portfolio_from_dataframe(
+    df,
+    top_n=3,
+):
+
+    """
+    Execute institutional portfolio using an already
+    prepared DataFrame.
+
+    Prevents duplicate data loading and duplicate
+    indicator calculation.
+    """
+
+    return build_institutional_portfolio(
+        df,
+        top_n=top_n,
+    )
+
+
+# ==================================================
 # PORTFOLIO PIPELINE
 # ==================================================
 
@@ -227,55 +241,18 @@ def run_portfolio_pipeline(
 ):
 
     """
-    Execute the institutional portfolio pipeline.
-
-    This function remains the high-level compatibility
-    entry point for file-based portfolio execution.
-
-    Portfolio orchestration is delegated to:
-
-        engine.institutional_portfolio_engine
-
-    Responsibilities of this wrapper:
-
-        1. Load market data
-        2. Calculate indicators
-        3. Delegate institutional portfolio orchestration
-
-    The institutional portfolio engine is the single
-    source of truth for:
-
-        - Strategy evaluation
-        - Portfolio result normalization
-        - Best strategy selection
-        - Portfolio allocation
-        - Portfolio risk
-        - Institutional decision
-        - Portfolio exposure
-        - Portfolio summary
+    File-based compatibility entry point.
     """
 
-    # ==================================================
-    # LOAD DATA
-    # ==================================================
-
     df = load_data(
-        data_file,
+        data_file
     )
-
-    # ==================================================
-    # CALCULATE INDICATORS
-    # ==================================================
 
     df = calculate_indicators(
-        df,
+        df
     )
 
-    # ==================================================
-    # INSTITUTIONAL PORTFOLIO ORCHESTRATION
-    # ==================================================
-
-    return build_institutional_portfolio(
+    return _run_portfolio_from_dataframe(
         df,
         top_n=top_n,
     )
@@ -291,25 +268,20 @@ def generate_reports(
 ):
 
     """
-    Generate standard reports and trade journal.
+    Generate standard text report,
+    HTML report and trade journal.
     """
-
-    # ==================================================
-    # ENSURE OUTPUT DIRECTORY
-    # ==================================================
 
     OUTPUT_DIR.mkdir(
         parents=True,
         exist_ok=True,
     )
 
-    # ==================================================
-    # TEXT REPORT
-    # ==================================================
 
     report = generate_report(
         statistics
     )
+
 
     save_report(
         report,
@@ -318,17 +290,11 @@ def generate_reports(
         ),
     )
 
-    # ==================================================
-    # HTML REPORT
-    # ==================================================
 
     html_report = generate_html_report(
         statistics
     )
 
-    # ==================================================
-    # TRADE JOURNAL
-    # ==================================================
 
     save_trade_journal(
         trades,
@@ -336,6 +302,7 @@ def generate_reports(
             TRADE_FILE
         ),
     )
+
 
     return {
 
@@ -367,7 +334,7 @@ def run_monte_carlo_pipeline(
 ):
 
     """
-    Execute Monte Carlo analysis.
+    Execute Monte Carlo simulation and analysis.
     """
 
     monte_carlo = run_monte_carlo(
@@ -442,7 +409,10 @@ def run_institutional_report(
 ):
 
     """
-    Build the final institutional report.
+    Build final institutional report.
+
+    portfolio must contain the complete institutional
+    portfolio result contract.
     """
 
     return build_institutional_report(
@@ -460,70 +430,15 @@ def run_institutional_report(
 
 def execute_pipeline(
     data_file,
-    top_n=3,
 ):
 
     """
-    Execute the complete institutional pipeline.
+    Execute complete institutional pipeline.
 
-    Flow:
-
-        Data
-          |
-          v
-        Indicators
-          |
-          v
-        Portfolio
-          |
-          v
-        Best Strategy
-          |
-          v
-        Backtest
-          |
-          v
-        Statistics
-          |
-          v
-        Monte Carlo
-          |
-          v
-        Walk Forward Optimization
-          |
-          v
-        Risk Dashboard
-          |
-          v
-        Institutional Report
-
-    Parameters
-    ----------
-    data_file : str or path-like
-        Market data file.
-
-    top_n : int
-        Maximum number of strategies considered by the
-        portfolio allocation engine.
+    Market data and indicators are prepared once
+    and reused by all downstream operations.
     """
 
-    # ==================================================
-    # PORTFOLIO
-    # ==================================================
-
-    portfolio_result = run_portfolio_pipeline(
-        data_file,
-        top_n=top_n,
-    )
-
-    portfolio = portfolio_result.get(
-        "portfolio",
-        [],
-    )
-
-    best = portfolio_result.get(
-        "best"
-    )
 
     # ==================================================
     # LOAD DATA
@@ -533,23 +448,52 @@ def execute_pipeline(
         data_file
     )
 
+
+    # ==================================================
+    # CALCULATE INDICATORS
+    # ==================================================
+
     df = calculate_indicators(
         df
     )
 
+
     # ==================================================
-    # BEST STRATEGY FALLBACK
+    # INSTITUTIONAL PORTFOLIO
     # ==================================================
 
-    if (
-        best
-        and isinstance(
-            best,
-            dict,
+    portfolio_result = (
+        _run_portfolio_from_dataframe(
+            df
         )
+    )
+
+
+    strategy_results = (
+        portfolio_result.get(
+            "portfolio",
+            [],
+        )
+    )
+
+
+    best_strategy = (
+        portfolio_result.get(
+            "best"
+        )
+    )
+
+
+    # ==================================================
+    # SELECT STRATEGY
+    # ==================================================
+
+    if isinstance(
+        best_strategy,
+        dict,
     ):
 
-        strategy_name = best.get(
+        strategy_name = best_strategy.get(
             "name",
             DEFAULT_STRATEGY,
         )
@@ -558,14 +502,24 @@ def execute_pipeline(
 
         strategy_name = DEFAULT_STRATEGY
 
+
     # ==================================================
     # RUN SELECTED STRATEGY
+    #
+    # Use a copy to prevent accidental mutation of the
+    # shared prepared DataFrame.
     # ==================================================
 
+    strategy_df = df.copy(
+        deep=True
+    )
+
+
     strategy_df = run_strategy(
-        df,
+        strategy_df,
         strategy=strategy_name,
     )
+
 
     # ==================================================
     # BACKTEST
@@ -575,13 +529,11 @@ def execute_pipeline(
         strategy_df
     )
 
-    # ==================================================
-    # STATISTICS
-    # ==================================================
 
     statistics = calculate_statistics(
         trades
     )
+
 
     # ==================================================
     # REPORTS
@@ -592,13 +544,23 @@ def execute_pipeline(
         trades,
     )
 
+
     # ==================================================
     # VISUAL REPORTS
     # ==================================================
 
-    visual_reports = generate_visual_reports(
-        trades
-    )
+    try:
+
+        visual_reports = (
+            generate_visual_reports(
+                trades
+            )
+        )
+
+    except Exception:
+
+        visual_reports = None
+
 
     # ==================================================
     # MONTE CARLO
@@ -608,6 +570,7 @@ def execute_pipeline(
         trades
     )
 
+
     # ==================================================
     # WALK FORWARD OPTIMIZATION
     # ==================================================
@@ -615,6 +578,7 @@ def execute_pipeline(
     wfo = run_wfo_pipeline(
         df
     )
+
 
     # ==================================================
     # RISK DASHBOARD
@@ -626,32 +590,36 @@ def execute_pipeline(
         wfo=wfo,
     )
 
+
     # ==================================================
     # INSTITUTIONAL REPORT
     # ==================================================
 
-    institutional_report = run_institutional_report(
-        portfolio=portfolio_result,
-        statistics=statistics,
-        monte_carlo=monte_carlo,
-        wfo=wfo,
-        risk_dashboard=risk_dashboard,
+    institutional_report = (
+        run_institutional_report(
+            portfolio=portfolio_result,
+            statistics=statistics,
+            monte_carlo=monte_carlo,
+            wfo=wfo,
+            risk_dashboard=risk_dashboard,
+        )
     )
 
+
     # ==================================================
-    # RETURN
+    # RETURN COMPLETE CONTRACT
     # ==================================================
 
     return {
 
         "portfolio":
-            portfolio,
+            strategy_results,
 
         "portfolio_result":
             portfolio_result,
 
         "best":
-            best,
+            best_strategy,
 
         "data":
             df,
@@ -684,7 +652,7 @@ def execute_pipeline(
 
 
 # ==================================================
-# BACKWARD-COMPATIBLE INSTITUTIONAL ENTRY POINT
+# BACKWARD-COMPATIBLE ENTRY POINT
 # ==================================================
 
 def run_institutional(
@@ -692,8 +660,7 @@ def run_institutional(
 ):
 
     """
-    Backward-compatible entry point for the complete
-    institutional pipeline.
+    Backward-compatible entry point.
     """
 
     return execute_pipeline(
