@@ -1,40 +1,42 @@
 """
-==================================================
+==========================================
 SULTAN QUANT OS
 Portfolio Validation Engine
-Version : 1.0.0
-==================================================
+Version : 1.3.0
+==========================================
 
 Responsibilities:
 
-- Validate institutional portfolio contract
-- Validate portfolio composition
-- Validate allocation consistency
-- Validate portfolio exposure
-- Validate portfolio risk
-- Validate institutional decision readiness
+- Validate institutional portfolio contracts
+- Validate portfolio strategy results
+- Validate allocation safely
+- Validate exposure consistency
+- Validate risk contract
+- Validate decision contract
+- Validate best strategy consistency
 - Preserve backward compatibility
-- Never crash the institutional pipeline
+- Never mutate caller-owned input
+- Fail safely on invalid input
 
 Architecture:
 
-Institutional Portfolio Result
-            |
-            v
-Portfolio Contract Validation
-            |
-            +--> Portfolio Integrity
-            |
-            +--> Allocation Validation
-            |
-            +--> Exposure Validation
-            |
-            +--> Risk Validation
-            |
-            +--> Decision Validation
-            |
-            v
-Validation Result
+Institutional Portfolio
+        +
+Contract Validation
+        +
+Portfolio Validation
+        +
+Allocation Validation
+        +
+Exposure Validation
+        +
+Risk Validation
+        +
+Decision Validation
+        +
+Best Strategy Validation
+        ↓
+VALID / WARNING / INVALID
 """
 
 from copy import deepcopy
@@ -45,30 +47,81 @@ from copy import deepcopy
 # ============================================================
 
 STATUS_VALID = "VALID"
-STATUS_INVALID = "INVALID"
+
 STATUS_WARNING = "WARNING"
 
-
-# ============================================================
-# PORTFOLIO EVALUATION STATUS
-# ============================================================
-
-STRATEGY_STATUS_SUCCESS = "SUCCESS"
+STATUS_INVALID = "INVALID"
 
 
 # ============================================================
-# REQUIRED TOP LEVEL CONTRACT
+# PORTFOLIO CONTRACT
 # ============================================================
 
 REQUIRED_PORTFOLIO_KEYS = (
-    "regime",
+
     "portfolio",
-    "best",
+
     "allocation",
-    "risk",
-    "decision",
+
     "exposure",
+
+    "risk",
+
+    "decision",
+
+    "best",
+
+    "regime",
+
     "summary",
+
+)
+
+
+STRUCTURAL_PORTFOLIO_KEYS = (
+
+    "portfolio",
+
+    "allocation",
+
+    "exposure",
+
+    "risk",
+
+    "decision",
+
+    "best",
+
+)
+
+
+COMPATIBLE_PORTFOLIO_KEYS = (
+
+    "regime",
+
+    "summary",
+
+)
+
+
+# ============================================================
+# VALIDATION CONTRACT
+# ============================================================
+
+REQUIRED_VALIDATION_KEYS = (
+
+    "status",
+
+    "valid",
+
+    "errors",
+
+    "warnings",
+
+    "checks",
+
+    "summary",
+
 )
 
 
@@ -76,17 +129,59 @@ REQUIRED_PORTFOLIO_KEYS = (
 # SAFE HELPERS
 # ============================================================
 
+def _safe_dict(
+    value,
+):
+
+    if isinstance(
+        value,
+        dict,
+    ):
+
+        return deepcopy(
+            value
+        )
+
+    return {}
+
+
+def _safe_list(
+    value,
+):
+
+    if isinstance(
+        value,
+        list,
+    ):
+
+        return deepcopy(
+            value
+        )
+
+    if isinstance(
+        value,
+        tuple,
+    ):
+
+        return list(
+            deepcopy(
+                value
+            )
+        )
+
+    return []
+
+
 def _safe_float(
     value,
     default=0.0,
 ):
-    """
-    Safely convert a value to float.
-    """
 
     try:
 
-        return float(value)
+        return float(
+            value
+        )
 
     except (
         TypeError,
@@ -96,120 +191,283 @@ def _safe_float(
         return default
 
 
-def _safe_dict(
+def _safe_string(
+    value,
+    default="",
+):
+
+    if value is None:
+
+        return default
+
+    try:
+
+        return str(
+            value
+        )
+
+    except Exception:
+
+        return default
+
+
+def _append_unique(
+    target,
     value,
 ):
-    """
-    Return a dictionary or an empty dictionary.
-    """
+
+    value = _safe_string(
+        value,
+        "",
+    ).strip()
+
+    if not value:
+
+        return
+
+    if value not in target:
+
+        target.append(
+            value
+        )
+
+
+def _strategy_name(
+    strategy,
+):
 
     if isinstance(
-        value,
+        strategy,
+        str,
+    ):
+
+        return strategy.strip()
+
+    if not isinstance(
+        strategy,
         dict,
     ):
 
-        return value
+        return ""
 
-    return {}
+    name = strategy.get(
+        "name",
+        strategy.get(
+            "strategy",
+            "",
+        ),
+    )
+
+    return _safe_string(
+        name,
+        "",
+    ).strip()
 
 
-def _safe_list(
-    value,
+def _strategy_status(
+    strategy,
 ):
     """
-    Return a list or an empty list.
+    Extract normalized strategy status.
+
+    Supported fields:
+
+    - evaluation_status
+    - status
+
+    evaluation_status has priority because it is used
+    by the institutional portfolio strategy result.
     """
 
+    if not isinstance(
+        strategy,
+        dict,
+    ):
+
+        return STATUS_INVALID
+
+    status = strategy.get(
+        "evaluation_status",
+        strategy.get(
+            "status",
+            None,
+        ),
+    )
+
+    if status is None:
+
+        return "SUCCESS"
+
+    return _safe_string(
+        status,
+        "",
+    ).upper().strip()
+
+
+def _is_successful_strategy(
+    strategy,
+):
+
+    status = _strategy_status(
+        strategy
+    )
+
+    return status in (
+
+        "SUCCESS",
+
+        "SUCCEEDED",
+
+        "VALID",
+
+        "APPROVED",
+
+        "OK",
+
+        "PASSED",
+
+        "PASS",
+
+    )
+
+
+def _is_failed_strategy(
+    strategy,
+):
+
+    status = _strategy_status(
+        strategy
+    )
+
+    return status in (
+
+        "FAILED",
+
+        "FAIL",
+
+        "ERROR",
+
+        "INVALID",
+
+        "BLOCKED",
+
+        "REJECTED",
+
+    )
+
+
+# ============================================================
+# ALLOCATION NORMALIZATION
+# ============================================================
+
+def _normalize_allocation(
+    allocation,
+):
+    """
+    Normalize supported allocation formats.
+
+    Supported:
+
+    List format:
+
+        [
+            {
+                "name": "strategy_a",
+                "allocation": 0.6,
+            }
+        ]
+
+    Dictionary mapping:
+
+        {
+            "strategy_a": 0.6,
+            "strategy_b": 0.4,
+        }
+    """
+
+    if allocation is None:
+
+        return []
+
     if isinstance(
-        value,
+        allocation,
         list,
     ):
 
-        return value
+        return deepcopy(
+            allocation
+        )
 
-    return []
+    if isinstance(
+        allocation,
+        tuple,
+    ):
 
+        return list(
+            deepcopy(
+                allocation
+            )
+        )
 
-# ============================================================
-# EMPTY VALIDATION RESULT
-# ============================================================
+    if isinstance(
+        allocation,
+        dict,
+    ):
 
-def _empty_validation_result():
-    """
-    Return the stable empty validation contract.
-    """
+        normalized = []
 
-    return {
+        for name, value in allocation.items():
 
-        "status":
-            STATUS_VALID,
+            if isinstance(
+                value,
+                dict,
+            ):
 
-        "valid":
-            True,
+                item = deepcopy(
+                    value
+                )
 
-        "errors":
-            [],
+                if (
 
-        "warnings":
-            [],
+                    "name"
+                    not in
+                    item
 
-        "checks":
-            {},
+                    and
 
-        "summary":
-            {},
+                    "strategy"
+                    not in
+                    item
 
-    }
+                ):
 
+                    item[
+                        "name"
+                    ] = name
 
-# ============================================================
-# VALIDATION MESSAGE
-# ============================================================
+                normalized.append(
+                    item
+                )
 
-def _add_error(
-    result,
-    message,
-):
-    """
-    Add a validation error.
-    """
+            else:
 
-    result[
-        "errors"
-    ].append(
-        str(message)
-    )
+                normalized.append(
 
-    result[
-        "valid"
-    ] = False
+                    {
 
-    result[
-        "status"
-    ] = STATUS_INVALID
+                        "name":
+                            name,
 
+                        "allocation":
+                            value,
 
-def _add_warning(
-    result,
-    message,
-):
-    """
-    Add a validation warning.
-    """
+                    }
 
-    result[
-        "warnings"
-    ].append(
-        str(message)
-    )
+                )
 
-    if result[
-        "status"
-    ] == STATUS_VALID:
+        return normalized
 
-        result[
-            "status"
-        ] = STATUS_WARNING
+    return None
 
 
 # ============================================================
@@ -217,35 +475,11 @@ def _add_warning(
 # ============================================================
 
 def validate_portfolio_contract(
-    portfolio_result,
+    portfolio,
 ):
-    """
-    Validate the top-level Institutional Portfolio contract.
-
-    Required keys:
-
-        - regime
-        - portfolio
-        - best
-        - allocation
-        - risk
-        - decision
-        - exposure
-        - summary
-
-    Returns
-    -------
-
-    dict
-
-        {
-            "valid": bool,
-            "missing_keys": list,
-        }
-    """
 
     if not isinstance(
-        portfolio_result,
+        portfolio,
         dict,
     ):
 
@@ -259,69 +493,99 @@ def validate_portfolio_contract(
                     REQUIRED_PORTFOLIO_KEYS
                 ),
 
+            "structural_missing_keys":
+                list(
+                    STRUCTURAL_PORTFOLIO_KEYS
+                ),
+
+            "compatible_missing_keys":
+                list(
+                    COMPATIBLE_PORTFOLIO_KEYS
+                ),
+
         }
 
-    missing_keys = [
+    missing_keys = []
 
-        key
+    structural_missing_keys = []
 
-        for key in REQUIRED_PORTFOLIO_KEYS
+    compatible_missing_keys = []
 
-        if key not in portfolio_result
+    for key in REQUIRED_PORTFOLIO_KEYS:
 
-    ]
+        if key not in portfolio:
+
+            missing_keys.append(
+                key
+            )
+
+    for key in STRUCTURAL_PORTFOLIO_KEYS:
+
+        if key not in portfolio:
+
+            structural_missing_keys.append(
+                key
+            )
+
+    for key in COMPATIBLE_PORTFOLIO_KEYS:
+
+        if key not in portfolio:
+
+            compatible_missing_keys.append(
+                key
+            )
 
     return {
 
         "valid":
             len(
-                missing_keys
+                structural_missing_keys
             )
             == 0,
 
         "missing_keys":
             missing_keys,
 
+        "structural_missing_keys":
+            structural_missing_keys,
+
+        "compatible_missing_keys":
+            compatible_missing_keys,
+
     }
 
 
 # ============================================================
-# PORTFOLIO VALIDATION
+# PORTFOLIO ITEM VALIDATION
 # ============================================================
 
 def validate_portfolio_items(
-    portfolio,
+    portfolio_items,
 ):
-    """
-    Validate portfolio strategy items.
 
-    A portfolio item must be a dictionary.
+    if not isinstance(
+        portfolio_items,
+        list,
+    ):
 
-    Strategies with FAILED / INSUFFICIENT_DATA status are
-    allowed to remain inside the portfolio result because
-    they are part of the diagnostic contract.
+        return {
 
-    Returns
-    -------
+            "valid":
+                False,
 
-    dict
+            "total":
+                0,
 
-        {
-            "valid": bool,
-            "total": int,
-            "successful": int,
-            "failed": int,
-            "invalid_items": int,
+            "successful":
+                0,
+
+            "failed":
+                0,
+
+            "invalid_items":
+                1,
+
         }
-    """
-
-    portfolio = _safe_list(
-        portfolio
-    )
-
-    total = len(
-        portfolio
-    )
 
     successful = 0
 
@@ -329,7 +593,7 @@ def validate_portfolio_items(
 
     invalid_items = 0
 
-    for item in portfolio:
+    for item in portfolio_items:
 
         if not isinstance(
             item,
@@ -340,12 +604,9 @@ def validate_portfolio_items(
 
             continue
 
-        status = item.get(
-            "evaluation_status",
-            STRATEGY_STATUS_SUCCESS,
-        )
-
-        if status == STRATEGY_STATUS_SUCCESS:
+        if _is_successful_strategy(
+            item
+        ):
 
             successful += 1
 
@@ -359,7 +620,9 @@ def validate_portfolio_items(
             invalid_items == 0,
 
         "total":
-            total,
+            len(
+                portfolio_items
+            ),
 
         "successful":
             successful,
@@ -374,168 +637,36 @@ def validate_portfolio_items(
 
 
 # ============================================================
-# ALLOCATION NORMALIZATION
-# ============================================================
-
-def _normalize_allocation(
-    allocation,
-):
-    """
-    Normalize allocation into a list of dictionaries.
-
-    Supported formats:
-
-        [
-            {
-                "name": "...",
-                "allocation": 0.5,
-            }
-        ]
-
-    or:
-
-        {
-            "strategy_a": 0.5,
-            "strategy_b": 0.5,
-        }
-    """
-
-    if isinstance(
-        allocation,
-        dict,
-    ):
-
-        normalized = []
-
-        for name, value in allocation.items():
-
-            normalized.append(
-
-                {
-
-                    "name":
-                        name,
-
-                    "allocation":
-                        _safe_float(
-                            value,
-                            0.0,
-                        ),
-
-                }
-
-            )
-
-        return normalized
-
-    if not isinstance(
-        allocation,
-        list,
-    ):
-
-        return []
-
-    normalized = []
-
-    for item in allocation:
-
-        if not isinstance(
-            item,
-            dict,
-        ):
-
-            continue
-
-        normalized_item = deepcopy(
-            item
-        )
-
-        allocation_value = normalized_item.get(
-            "allocation",
-            normalized_item.get(
-                "weight",
-                0.0,
-            ),
-        )
-
-        normalized_item[
-            "allocation"
-        ] = _safe_float(
-            allocation_value,
-            0.0,
-        )
-
-        normalized.append(
-            normalized_item
-        )
-
-    return normalized
-
-
-# ============================================================
 # ALLOCATION VALIDATION
 # ============================================================
 
 def validate_allocation(
     allocation,
-    tolerance=0.0001,
 ):
-    """
-    Validate portfolio allocation.
 
-    Rules:
-
-        - Allocation must not be negative
-        - Empty allocation is allowed
-        - Non-empty allocation should sum to approximately 1.0
-
-    Returns
-    -------
-
-    dict
-
-        {
-            "valid": bool,
-            "total_allocation": float,
-            "negative_items": int,
-            "count": int,
-        }
-    """
-
-    allocation = _normalize_allocation(
+    normalized = _normalize_allocation(
         allocation
     )
 
-    count = len(
-        allocation
-    )
+    if normalized is None:
 
-    negative_items = 0
+        return {
 
-    total_allocation = 0.0
+            "valid":
+                False,
 
-    for item in allocation:
-
-        value = _safe_float(
-            item.get(
-                "allocation",
+            "total_allocation":
                 0.0,
-            ),
-            0.0,
-        )
 
-        if value < 0:
+            "negative_items":
+                0,
 
-            negative_items += 1
+            "count":
+                0,
 
-        total_allocation += value
+        }
 
-    total_allocation = round(
-        total_allocation,
-        10,
-    )
-
-    if count == 0:
+    if not normalized:
 
         return {
 
@@ -553,18 +684,72 @@ def validate_allocation(
 
         }
 
+    total_allocation = 0.0
+
+    negative_items = 0
+
+    invalid_items = 0
+
+    for item in normalized:
+
+        if not isinstance(
+            item,
+            dict,
+        ):
+
+            invalid_items += 1
+
+            continue
+
+        raw_value = item.get(
+            "allocation",
+            item.get(
+                "weight",
+                None,
+            ),
+        )
+
+        if raw_value is None:
+
+            invalid_items += 1
+
+            continue
+
+        try:
+
+            value = float(
+                raw_value
+            )
+
+        except (
+            TypeError,
+            ValueError,
+        ):
+
+            invalid_items += 1
+
+            continue
+
+        if value < 0:
+
+            negative_items += 1
+
+        total_allocation += value
+
     valid = (
+
+        invalid_items == 0
+
+        and
 
         negative_items == 0
 
         and
 
         abs(
-            total_allocation
-            -
-            1.0
+            total_allocation - 1.0
         )
-        <= tolerance
+        < 0.000001
 
     )
 
@@ -580,7 +765,9 @@ def validate_allocation(
             negative_items,
 
         "count":
-            count,
+            len(
+                normalized
+            ),
 
     }
 
@@ -592,40 +779,76 @@ def validate_allocation(
 def validate_exposure(
     allocation,
     exposure,
-    tolerance=0.0001,
 ):
-    """
-    Validate reported exposure against normalized allocation.
-    """
 
-    allocation = _normalize_allocation(
+    normalized = _normalize_allocation(
         allocation
     )
 
-    calculated_exposure = round(
+    if normalized is None:
 
-        sum(
+        return {
 
-            _safe_float(
-                item.get(
-                    "allocation",
+            "valid":
+                False,
+
+            "calculated_exposure":
+                0.0,
+
+            "reported_exposure":
+                _safe_float(
+                    exposure,
                     0.0,
                 ),
+
+        }
+
+    calculated_exposure = 0.0
+
+    for item in normalized:
+
+        if not isinstance(
+            item,
+            dict,
+        ):
+
+            continue
+
+        raw_value = item.get(
+            "allocation",
+            item.get(
+                "weight",
                 0.0,
-            )
+            ),
+        )
 
-            for item in allocation
+        calculated_exposure += _safe_float(
+            raw_value,
+            0.0,
+        )
 
-        ),
-
-        10,
-
-    )
-
-    reported_exposure = _safe_float(
+    if isinstance(
         exposure,
-        0.0,
-    )
+        dict,
+    ):
+
+        reported_exposure = _safe_float(
+            exposure.get(
+                "total",
+                exposure.get(
+                    "exposure",
+                    0.0,
+                ),
+            ),
+            0.0,
+        )
+
+    else:
+
+        reported_exposure = _safe_float(
+            exposure,
+            0.0,
+        )
 
     valid = (
 
@@ -634,7 +857,7 @@ def validate_exposure(
             -
             reported_exposure
         )
-        <= tolerance
+        < 0.000001
 
     )
 
@@ -659,16 +882,25 @@ def validate_exposure(
 def validate_risk(
     risk,
 ):
-    """
-    Validate portfolio risk result.
 
-    Empty risk is allowed because an empty portfolio may not
-    produce a risk calculation.
-    """
+    if risk is None:
 
-    risk = _safe_dict(
-        risk
-    )
+        risk = {}
+
+    if not isinstance(
+        risk,
+        dict,
+    ):
+
+        return {
+
+            "valid":
+                False,
+
+            "empty":
+                False,
+
+        }
 
     if not risk:
 
@@ -684,7 +916,10 @@ def validate_risk(
 
     risk_score = risk.get(
         "risk_score",
-        None,
+        risk.get(
+            "score",
+            None,
+        ),
     )
 
     if risk_score is None:
@@ -699,15 +934,41 @@ def validate_risk(
 
         }
 
-    risk_score = _safe_float(
-        risk_score,
-        -1.0,
+    try:
+
+        risk_score = float(
+            risk_score
+        )
+
+    except (
+        TypeError,
+        ValueError,
+    ):
+
+        return {
+
+            "valid":
+                False,
+
+            "empty":
+                False,
+
+        }
+
+    valid = (
+
+        risk_score >= 0
+
+        and
+
+        risk_score <= 100
+
     )
 
     return {
 
         "valid":
-            risk_score >= 0.0,
+            valid,
 
         "empty":
             False,
@@ -722,16 +983,28 @@ def validate_risk(
 def validate_decision(
     decision,
 ):
-    """
-    Validate institutional decision result.
 
-    Empty decision is allowed for backward compatibility and
-    safe pipeline behavior.
-    """
+    if decision is None:
 
-    decision = _safe_dict(
-        decision
-    )
+        decision = {}
+
+    if not isinstance(
+        decision,
+        dict,
+    ):
+
+        return {
+
+            "valid":
+                False,
+
+            "empty":
+                False,
+
+            "status":
+                "",
+
+        }
 
     if not decision:
 
@@ -744,14 +1017,17 @@ def validate_decision(
                 True,
 
             "status":
-                None,
+                "",
 
         }
 
-    status = decision.get(
-        "status",
-        None,
-    )
+    status = _safe_string(
+        decision.get(
+            "status",
+            "",
+        ),
+        "",
+    ).strip()
 
     return {
 
@@ -772,77 +1048,58 @@ def validate_decision(
 # ============================================================
 
 def validate_best_strategy(
-    portfolio,
+    portfolio_items,
     best,
 ):
-    """
-    Validate that the selected best strategy is consistent with
-    the normalized portfolio.
 
-    Empty best is allowed when no successful strategy exists.
-    """
-
-    portfolio = _safe_list(
-        portfolio
+    portfolio_items = _safe_list(
+        portfolio_items
     )
 
-    successful = [
+    successful_names = []
 
-        item
+    for item in portfolio_items:
 
-        for item in portfolio
-
-        if isinstance(
+        if not isinstance(
             item,
             dict,
-        )
+        ):
 
-        and
+            continue
 
-        item.get(
-            "evaluation_status",
-            STRATEGY_STATUS_SUCCESS,
-        )
-        == STRATEGY_STATUS_SUCCESS
+        if _is_successful_strategy(
+            item
+        ):
 
-    ]
+            name = _strategy_name(
+                item
+            )
 
-    if best is None:
+            if name:
 
-        return {
-
-            "valid":
-                len(
-                    successful
+                successful_names.append(
+                    name
                 )
-                == 0,
 
-            "has_best":
-                False,
-
-        }
-
-    if not isinstance(
-        best,
-        dict,
-    ):
-
-        return {
-
-            "valid":
-                False,
-
-            "has_best":
-                True,
-
-        }
-
-    best_name = best.get(
-        "name",
-        None,
+    best_name = _strategy_name(
+        best
     )
 
-    if best_name is None:
+    if not successful_names:
+
+        return {
+
+            "valid":
+                True,
+
+            "has_best":
+                bool(
+                    best_name
+                ),
+
+        }
+
+    if not best_name:
 
         return {
 
@@ -850,20 +1107,9 @@ def validate_best_strategy(
                 False,
 
             "has_best":
-                True,
+                False,
 
         }
-
-    successful_names = {
-
-        item.get(
-            "name",
-            None,
-        )
-
-        for item in successful
-
-    }
 
     return {
 
@@ -879,402 +1125,441 @@ def validate_best_strategy(
 
 
 # ============================================================
-# MAIN VALIDATION ENGINE
+# MAIN INSTITUTIONAL PORTFOLIO VALIDATION
 # ============================================================
 
 def validate_institutional_portfolio(
-    portfolio_result,
+    portfolio,
 ):
-    """
-    Validate the complete Institutional Portfolio result.
 
-    This function is intentionally non-destructive.
-
-    It never modifies the supplied portfolio result and always
-    returns a stable validation contract.
-
-    Returns
-    -------
-
-    {
-        "status": "VALID" | "WARNING" | "INVALID",
-        "valid": bool,
-        "errors": [],
-        "warnings": [],
-        "checks": {},
-        "summary": {},
-    }
-    """
-
-    result = _empty_validation_result()
-
-    # ========================================================
-    # CONTRACT
-    # ========================================================
-
-    contract = validate_portfolio_contract(
-        portfolio_result
+    safe_portfolio = _safe_dict(
+        portfolio
     )
 
-    result[
-        "checks"
-    ][
-        "contract"
-    ] = contract
+    if not isinstance(
+        portfolio,
+        dict,
+    ):
 
-    if not contract[
-        "valid"
-    ]:
+        return {
 
-        _add_error(
+            "status":
+                STATUS_INVALID,
 
-            result,
+            "valid":
+                False,
 
-            "Missing required portfolio contract keys: "
-            +
-            ", ".join(
-                contract[
-                    "missing_keys"
-                ]
-            ),
+            "errors": [
 
-        )
+                "Portfolio must be a dictionary"
 
-        result[
-            "summary"
-        ] = {
+            ],
 
-            "portfolio_items":
-                0,
+            "warnings": [],
 
-            "successful_strategies":
-                0,
+            "checks": {
 
-            "allocation_count":
-                0,
+                "contract":
+                    validate_portfolio_contract(
+                        {}
+                    ),
 
-            "exposure":
-                0.0,
+                "portfolio":
+                    validate_portfolio_items(
+                        []
+                    ),
+
+                "allocation":
+                    validate_allocation(
+                        []
+                    ),
+
+                "exposure":
+                    validate_exposure(
+                        [],
+                        0.0,
+                    ),
+
+                "risk":
+                    validate_risk(
+                        {}
+                    ),
+
+                "decision":
+                    validate_decision(
+                        {}
+                    ),
+
+                "best":
+                    validate_best_strategy(
+                        [],
+                        None,
+                    ),
+
+            },
+
+            "summary": {
+
+                "portfolio_items":
+                    0,
+
+                "successful_strategies":
+                    0,
+
+                "failed_strategies":
+                    0,
+
+                "allocation_count":
+                    0,
+
+                "allocation_total":
+                    0.0,
+
+                "exposure":
+                    0.0,
+
+            },
 
         }
 
-        return result
+    contract = validate_portfolio_contract(
+        safe_portfolio
+    )
 
-    # ========================================================
-    # SAFE COMPONENTS
-    # ========================================================
-
-    portfolio = _safe_list(
-        portfolio_result.get(
+    portfolio_items = _safe_list(
+        safe_portfolio.get(
             "portfolio",
             [],
         )
     )
 
-    allocation = portfolio_result.get(
+    allocation = safe_portfolio.get(
         "allocation",
         [],
     )
 
-    exposure = portfolio_result.get(
+    exposure = safe_portfolio.get(
         "exposure",
         0.0,
     )
 
-    risk = portfolio_result.get(
+    risk = safe_portfolio.get(
         "risk",
         {},
     )
 
-    decision = portfolio_result.get(
+    decision = safe_portfolio.get(
         "decision",
         {},
     )
 
-    best = portfolio_result.get(
+    best = safe_portfolio.get(
         "best",
-        None,
+        safe_portfolio.get(
+            "best_strategy",
+            None,
+        ),
     )
-
-    # ========================================================
-    # PORTFOLIO
-    # ========================================================
 
     portfolio_check = validate_portfolio_items(
-        portfolio
+        portfolio_items
     )
-
-    result[
-        "checks"
-    ][
-        "portfolio"
-    ] = portfolio_check
-
-    if not portfolio_check[
-        "valid"
-    ]:
-
-        _add_error(
-
-            result,
-
-            "Portfolio contains invalid strategy items.",
-
-        )
-
-    # ========================================================
-    # ALLOCATION
-    # ========================================================
 
     allocation_check = validate_allocation(
         allocation
     )
-
-    result[
-        "checks"
-    ][
-        "allocation"
-    ] = allocation_check
-
-    if not allocation_check[
-        "valid"
-    ]:
-
-        _add_error(
-
-            result,
-
-            "Portfolio allocation is invalid.",
-
-        )
-
-    # ========================================================
-    # EXPOSURE
-    # ========================================================
 
     exposure_check = validate_exposure(
         allocation,
         exposure,
     )
 
-    result[
-        "checks"
-    ][
-        "exposure"
-    ] = exposure_check
-
-    if not exposure_check[
-        "valid"
-    ]:
-
-        _add_error(
-
-            result,
-
-            "Reported exposure does not match allocation.",
-
-        )
-
-    # ========================================================
-    # RISK
-    # ========================================================
-
     risk_check = validate_risk(
         risk
     )
-
-    result[
-        "checks"
-    ][
-        "risk"
-    ] = risk_check
-
-    if not risk_check[
-        "valid"
-    ]:
-
-        _add_error(
-
-            result,
-
-            "Portfolio risk is invalid.",
-
-        )
-
-    # ========================================================
-    # DECISION
-    # ========================================================
 
     decision_check = validate_decision(
         decision
     )
 
-    result[
-        "checks"
-    ][
-        "decision"
-    ] = decision_check
-
-    if not decision_check[
-        "valid"
-    ]:
-
-        _add_error(
-
-            result,
-
-            "Portfolio decision is invalid.",
-
-        )
-
-    # ========================================================
-    # BEST STRATEGY
-    # ========================================================
-
     best_check = validate_best_strategy(
-        portfolio,
+        portfolio_items,
         best,
     )
 
-    result[
-        "checks"
-    ][
-        "best"
-    ] = best_check
+    checks = {
 
-    if not best_check[
-        "valid"
-    ]:
+        "contract":
+            contract,
 
-        _add_error(
+        "portfolio":
+            portfolio_check,
 
-            result,
-
-            "Best strategy is inconsistent with portfolio.",
-
-        )
-
-    # ========================================================
-    # WARNINGS
-    # ========================================================
-
-    if (
-        portfolio_check[
-            "total"
-        ]
-        > 0
-
-        and
-
-        portfolio_check[
-            "successful"
-        ]
-        == 0
-    ):
-
-        _add_warning(
-
-            result,
-
-            "Portfolio contains no successful strategy.",
-
-        )
-
-    if (
-
-        portfolio_check[
-            "successful"
-        ]
-        > 0
-
-        and
-
-        allocation_check[
-            "count"
-        ]
-        == 0
-    ):
-
-        _add_warning(
-
-            result,
-
-            "Successful strategies exist but no capital allocation was produced.",
-
-        )
-
-    # ========================================================
-    # SUMMARY
-    # ========================================================
-
-    result[
-        "summary"
-    ] = {
-
-        "portfolio_items":
-            portfolio_check[
-                "total"
-            ],
-
-        "successful_strategies":
-            portfolio_check[
-                "successful"
-            ],
-
-        "failed_strategies":
-            portfolio_check[
-                "failed"
-            ],
-
-        "allocation_count":
-            allocation_check[
-                "count"
-            ],
-
-        "allocation_total":
-            allocation_check[
-                "total_allocation"
-            ],
+        "allocation":
+            allocation_check,
 
         "exposure":
-            exposure_check[
-                "reported_exposure"
-            ],
+            exposure_check,
+
+        "risk":
+            risk_check,
+
+        "decision":
+            decision_check,
+
+        "best":
+            best_check,
 
     }
 
-    return result
+    errors = []
+
+    warnings = []
+
+    if not contract.get(
+        "valid",
+        False,
+    ):
+
+        for key in contract.get(
+            "structural_missing_keys",
+            [],
+        ):
+
+            _append_unique(
+                errors,
+                (
+                    "Missing required portfolio key: "
+                    f"{key}"
+                ),
+            )
+
+    for key in contract.get(
+        "compatible_missing_keys",
+        [],
+    ):
+
+        _append_unique(
+            warnings,
+            (
+                "Compatible portfolio key missing: "
+                f"{key}"
+            ),
+        )
+
+    if not portfolio_check.get(
+        "valid",
+        False,
+    ):
+
+        _append_unique(
+            errors,
+            "Portfolio contains invalid strategy items",
+        )
+
+    if not allocation_check.get(
+        "valid",
+        False,
+    ):
+
+        _append_unique(
+            errors,
+            "Portfolio allocation is invalid",
+        )
+
+    if not exposure_check.get(
+        "valid",
+        False,
+    ):
+
+        _append_unique(
+            errors,
+            "Portfolio exposure is inconsistent",
+        )
+
+    if not risk_check.get(
+        "valid",
+        False,
+    ):
+
+        _append_unique(
+            errors,
+            "Portfolio risk is invalid",
+        )
+
+    if not decision_check.get(
+        "valid",
+        False,
+    ):
+
+        _append_unique(
+            errors,
+            "Portfolio decision is invalid",
+        )
+
+    if not best_check.get(
+        "valid",
+        False,
+    ):
+
+        _append_unique(
+            errors,
+            "Best strategy is inconsistent with portfolio",
+        )
+
+    successful = portfolio_check.get(
+        "successful",
+        0,
+    )
+
+    failed = portfolio_check.get(
+        "failed",
+        0,
+    )
+
+    allocation_count = allocation_check.get(
+        "count",
+        0,
+    )
+
+    if (
+
+        portfolio_check.get(
+            "total",
+            0,
+        )
+        > 0
+
+        and
+
+        successful == 0
+
+        and
+
+        failed > 0
+
+    ):
+
+        _append_unique(
+            warnings,
+            "No successful strategies in portfolio",
+        )
+
+    if (
+
+        successful > 0
+
+        and
+
+        allocation_count == 0
+
+    ):
+
+        _append_unique(
+            warnings,
+            (
+                "Successful strategy exists without "
+                "portfolio allocation"
+            ),
+        )
+
+    if errors:
+
+        status = STATUS_INVALID
+
+        valid = False
+
+    elif warnings:
+
+        status = STATUS_WARNING
+
+        valid = True
+
+    else:
+
+        status = STATUS_VALID
+
+        valid = True
+
+    return {
+
+        "status":
+            status,
+
+        "valid":
+            valid,
+
+        "errors":
+            errors,
+
+        "warnings":
+            warnings,
+
+        "checks":
+            checks,
+
+        "summary": {
+
+            "portfolio_items":
+                portfolio_check.get(
+                    "total",
+                    0,
+                ),
+
+            "successful_strategies":
+                successful,
+
+            "failed_strategies":
+                failed,
+
+            "allocation_count":
+                allocation_count,
+
+            "allocation_total":
+                allocation_check.get(
+                    "total_allocation",
+                    0.0,
+                ),
+
+            "exposure":
+                exposure_check.get(
+                    "reported_exposure",
+                    0.0,
+                ),
+
+        },
+
+    }
 
 
 # ============================================================
-# BACKWARD / FRIENDLY ALIAS
+# BACKWARD FRIENDLY ALIAS
 # ============================================================
 
 def validate_portfolio(
-    portfolio_result,
+    portfolio,
 ):
-    """
-    Backward-friendly alias for the main validation engine.
-    """
 
     return validate_institutional_portfolio(
-        portfolio_result
+        portfolio
     )
 
 
 # ============================================================
-# PUBLIC CONTRACT
+# PUBLIC API
 # ============================================================
 
 __all__ = [
 
     "STATUS_VALID",
 
-    "STATUS_INVALID",
-
     "STATUS_WARNING",
 
+    "STATUS_INVALID",
+
     "REQUIRED_PORTFOLIO_KEYS",
+
+    "REQUIRED_VALIDATION_KEYS",
 
     "validate_portfolio_contract",
 
