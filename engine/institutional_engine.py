@@ -2,7 +2,7 @@
 ==========================================
 SULTAN QUANT OS
 Institutional Engine
-Version : 5.2.3
+Version : 5.2.5
 ==========================================
 
 Responsibilities:
@@ -159,6 +159,105 @@ TRADE_FILE = (
     OUTPUT_DIR /
     "trade_journal.csv"
 )
+
+
+# ==================================================
+# STRATEGY NAME NORMALIZATION
+# ==================================================
+
+def _extract_strategy_name(
+    best_strategy,
+):
+
+    """
+    Extract the selected strategy name from a strategy
+    result while preserving compatibility with possible
+    strategy result contracts.
+
+    Supported keys:
+
+        - name
+        - strategy
+        - strategy_name
+
+    Returns None when no valid strategy identifier
+    is available.
+    """
+
+    if not isinstance(
+        best_strategy,
+        dict,
+    ):
+
+        return None
+
+
+    strategy_name = (
+
+        best_strategy.get(
+            "name"
+        )
+
+        or best_strategy.get(
+            "strategy"
+        )
+
+        or best_strategy.get(
+            "strategy_name"
+        )
+    )
+
+
+    if strategy_name is None:
+
+        return None
+
+
+    strategy_name = str(
+        strategy_name
+    ).strip()
+
+
+    if not strategy_name:
+
+        return None
+
+
+    return strategy_name
+
+
+# ==================================================
+# STRATEGY SELECTION
+# ==================================================
+
+def _resolve_strategy_name(
+    best_strategy,
+):
+
+    """
+    Resolve the strategy used by the execution pipeline.
+
+    Priority:
+
+        1. Strategy selected by institutional portfolio
+        2. DEFAULT_STRATEGY fallback
+
+    This preserves backward compatibility while allowing
+    portfolio selection to remain the primary source of
+    strategy selection.
+    """
+
+    strategy_name = _extract_strategy_name(
+        best_strategy
+    )
+
+
+    if strategy_name:
+
+        return strategy_name
+
+
+    return DEFAULT_STRATEGY
 
 
 # ==================================================
@@ -486,21 +585,15 @@ def execute_pipeline(
 
     # ==================================================
     # SELECT STRATEGY
+    #
+    # The institutional portfolio is the primary source
+    # of strategy selection. DEFAULT_STRATEGY is retained
+    # as a backward-compatible fallback.
     # ==================================================
 
-    if isinstance(
-        best_strategy,
-        dict,
-    ):
-
-        strategy_name = best_strategy.get(
-            "name",
-            DEFAULT_STRATEGY,
-        )
-
-    else:
-
-        strategy_name = DEFAULT_STRATEGY
+    strategy_name = _resolve_strategy_name(
+        best_strategy
+    )
 
 
     # ==================================================
@@ -620,6 +713,9 @@ def execute_pipeline(
 
         "best":
             best_strategy,
+
+        "strategy_name":
+            strategy_name,
 
         "data":
             df,
