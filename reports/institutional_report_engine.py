@@ -114,7 +114,7 @@ def available_strategies_section():
 
     report += "\n"
 
-    return report--
+    return report
 
 
 # ==================================================
