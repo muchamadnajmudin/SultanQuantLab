@@ -2,29 +2,44 @@
 ==========================================
 SULTAN QUANT OS
 Strategy Candidate Validation Engine
-Version : 1.0.0
+Version : 1.3.0
 ==========================================
 
 Responsibilities:
 
-- Validate discovered strategy candidates
-- Check candidate structure
-- Evaluate score and confidence thresholds
-- Evaluate optional evaluation/backtest data
-- Decide whether a candidate is qualified
-- Decide whether more data is required
+- Validate strategy candidate structure
+- Validate strategy score
+- Validate confidence
+- Validate sample or trade count
+- Support embedded evaluation data
+- Support explicit evaluation overrides
+- Preserve input immutability
+- Produce a stable validation contract
 
-This engine DOES NOT:
+Validation outcomes:
 
-- Generate strategies
-- Modify strategies
-- Promote strategies to the registry
-- Execute trades
+QUALIFIED
+    Candidate passed all validation rules.
 
-It only answers:
+REJECTED
+    Candidate is structurally invalid or
+    available metrics failed the required
+    thresholds.
 
-"Is this strategy candidate sufficiently qualified
-to proceed to the promotion stage?"
+INSUFFICIENT_DATA
+    Required validation data is missing.
+
+Important distinction:
+
+Missing sample data:
+    INSUFFICIENT_DATA
+
+Sample data exists but is below minimum:
+    REJECTED
+
+The Strategy Lifecycle Engine may interpret
+an insufficient_sample_count rejection as
+HOLD according to lifecycle policy.
 """
 
 from copy import deepcopy
@@ -47,8 +62,8 @@ REQUIRED_RESULT_KEYS = (
 
 def required_result_keys():
     """
-    Return the stable Strategy Candidate Validation
-    Engine result contract.
+    Return the stable Strategy Candidate
+    Validation result contract.
     """
 
     return REQUIRED_RESULT_KEYS
@@ -56,7 +71,10 @@ def required_result_keys():
 
 def _safe_dict(value):
     """
-    Return a safe independent dictionary copy.
+    Return an independent dictionary copy.
+
+    Non-dictionary values return an empty
+    dictionary.
     """
 
     if not isinstance(value, dict):
@@ -65,43 +83,48 @@ def _safe_dict(value):
     return deepcopy(value)
 
 
-def _safe_list(value):
+def _safe_number(value):
     """
-    Return a safe independent list copy.
+    Return a numeric value safely.
+
+    Boolean values are not treated as numbers.
+    Invalid values return None.
     """
 
-    if not isinstance(value, list):
-        return []
+    if isinstance(value, bool):
+        return None
 
-    return deepcopy(value)
+    if isinstance(value, (int, float)):
+        return value
+
+    return None
 
 
 def _get_numeric_value(
-    data,
+    source,
     keys,
-    default=None,
 ):
     """
-    Return the first valid numeric value found.
-
-    Boolean values are not accepted as numeric values.
+    Resolve the first valid numeric value from
+    a dictionary using a list of supported keys.
     """
 
-    if not isinstance(data, dict):
-        return default
+    if not isinstance(source, dict):
+        return None
 
     for key in keys:
 
-        value = data.get(key)
-
-        if isinstance(value, bool):
+        if key not in source:
             continue
 
-        if isinstance(value, (int, float)):
+        value = _safe_number(
+            source.get(key)
+        )
 
-            return float(value)
+        if value is not None:
+            return value
 
-    return default
+    return None
 
 
 def _merge_evaluation(
@@ -109,60 +132,43 @@ def _merge_evaluation(
     evaluation,
 ):
     """
-    Build a safe evaluation context.
+    Merge candidate embedded evaluation with
+    explicit evaluation.
 
-    Explicit evaluation data overrides values from
-    the candidate.
+    Explicit evaluation has priority.
+
+    The returned dictionary is independent from
+    both input objects.
     """
 
     merged = {}
 
     if isinstance(candidate, dict):
 
-        candidate_evaluation = (
-            candidate.get("evaluation")
+        embedded_evaluation = candidate.get(
+            "evaluation"
         )
 
-        if isinstance(candidate_evaluation, dict):
+        if isinstance(
+            embedded_evaluation,
+            dict,
+        ):
 
             merged.update(
-                deepcopy(candidate_evaluation)
+                deepcopy(
+                    embedded_evaluation
+                )
             )
 
     if isinstance(evaluation, dict):
 
         merged.update(
-            deepcopy(evaluation)
+            deepcopy(
+                evaluation
+            )
         )
 
     return merged
-
-
-def _candidate_name(candidate):
-    """
-    Extract a stable candidate identifier.
-    """
-
-    if not isinstance(candidate, dict):
-        return ""
-
-    name = candidate.get("strategy")
-
-    if not isinstance(name, str) or not name.strip():
-
-        name = candidate.get("name")
-
-    if not isinstance(name, str) or not name.strip():
-
-        name = candidate.get(
-            "candidate"
-        )
-
-    if not isinstance(name, str):
-
-        return ""
-
-    return name.strip()
 
 
 def _validate_candidate_structure(
@@ -171,28 +177,49 @@ def _validate_candidate_structure(
     """
     Validate the minimum candidate structure.
 
-    A valid candidate requires a stable identifier.
-    """
+    Supported candidate identifiers:
 
-    reasons = []
+    - strategy
+    - name
+    - candidate
+    """
 
     if not isinstance(candidate, dict):
 
-        return False, [
-            "invalid_candidate"
-        ]
-
-    name = _candidate_name(candidate)
-
-    if not name:
-
-        reasons.append(
-            "missing_candidate_name"
+        return (
+            False,
+            [
+                "invalid_candidate",
+            ],
         )
 
-    valid = len(reasons) == 0
+    identifier_keys = (
+        "strategy",
+        "name",
+        "candidate",
+    )
 
-    return valid, reasons
+    for key in identifier_keys:
+
+        value = candidate.get(
+            key
+        )
+
+        if isinstance(value, str):
+
+            if value.strip():
+
+                return (
+                    True,
+                    [],
+                )
+
+    return (
+        False,
+        [
+            "missing_candidate_name",
+        ],
+    )
 
 
 def _resolve_score(
@@ -200,10 +227,10 @@ def _resolve_score(
     evaluation,
 ):
     """
-    Resolve score from candidate and evaluation data.
+    Resolve score.
 
-    Evaluation data has priority because it represents
-    the latest validation result.
+    Evaluation data has priority over the
+    candidate itself.
     """
 
     score = _get_numeric_value(
@@ -234,7 +261,7 @@ def _resolve_confidence(
     evaluation,
 ):
     """
-    Resolve confidence from candidate and evaluation data.
+    Resolve confidence.
 
     Evaluation data has priority.
     """
@@ -265,9 +292,9 @@ def _resolve_trade_count(
     evaluation,
 ):
     """
-    Resolve optional trade/sample count.
+    Resolve trade or sample count.
 
-    This is used when minimum_samples is required.
+    Evaluation data has priority.
     """
 
     sample_count = _get_numeric_value(
@@ -295,6 +322,43 @@ def _resolve_trade_count(
     )
 
 
+def _build_result(
+    status,
+    qualified,
+    promotion_allowed,
+    candidate,
+    reasons,
+    evaluation,
+):
+    """
+    Build a stable independent validation result.
+    """
+
+    return {
+        "status": status,
+        "qualified": bool(
+            qualified
+        ),
+        "promotion_allowed": bool(
+            promotion_allowed
+        ),
+        "candidate": _safe_dict(
+            candidate
+        ),
+        "reasons": deepcopy(
+            list(reasons)
+            if isinstance(
+                reasons,
+                list,
+            )
+            else []
+        ),
+        "evaluation": _safe_dict(
+            evaluation
+        ),
+    }
+
+
 def validate_strategy_candidate(
     candidate,
     evaluation=None,
@@ -308,14 +372,12 @@ def validate_strategy_candidate(
     Parameters
     ----------
     candidate : dict
-        Strategy candidate generated by the discovery
-        stage.
+        Strategy candidate.
 
     evaluation : dict, optional
         Validation or backtest metrics.
 
-        Explicit evaluation data takes priority over
-        candidate evaluation data.
+        Explicit evaluation data has priority.
 
     minimum_score : float
         Minimum acceptable score.
@@ -324,15 +386,13 @@ def validate_strategy_candidate(
         Minimum acceptable confidence.
 
     minimum_samples : int
-        Minimum required trade/sample count.
-
-        If greater than zero and sample data is missing,
-        the result becomes INSUFFICIENT_DATA.
+        Minimum required trade or sample count.
 
     Returns
     -------
     dict
-        Stable Strategy Candidate Validation contract.
+        Stable Strategy Candidate Validation
+        result contract.
     """
 
     candidate_is_valid_type = isinstance(
@@ -345,22 +405,24 @@ def validate_strategy_candidate(
     )
 
     safe_evaluation = _merge_evaluation(
-        candidate if candidate_is_valid_type else {},
+        candidate
+        if candidate_is_valid_type
+        else {},
         evaluation,
     )
 
     if not candidate_is_valid_type:
 
-        return {
-            "status": STATUS_REJECTED,
-            "qualified": False,
-            "promotion_allowed": False,
-            "candidate": safe_candidate,
-            "reasons": [
-                "invalid_candidate"
+        return _build_result(
+            status=STATUS_REJECTED,
+            qualified=False,
+            promotion_allowed=False,
+            candidate=safe_candidate,
+            reasons=[
+                "invalid_candidate",
             ],
-            "evaluation": safe_evaluation,
-        }
+            evaluation=safe_evaluation,
+        )
 
     structure_valid, structure_reasons = (
         _validate_candidate_structure(
@@ -374,14 +436,38 @@ def validate_strategy_candidate(
 
     if not structure_valid:
 
-        return {
-            "status": STATUS_REJECTED,
-            "qualified": False,
-            "promotion_allowed": False,
-            "candidate": safe_candidate,
-            "reasons": reasons,
-            "evaluation": safe_evaluation,
-        }
+        return _build_result(
+            status=STATUS_REJECTED,
+            qualified=False,
+            promotion_allowed=False,
+            candidate=safe_candidate,
+            reasons=reasons,
+            evaluation=safe_evaluation,
+        )
+
+    minimum_score_value = _safe_number(
+        minimum_score
+    )
+
+    if minimum_score_value is None:
+
+        minimum_score_value = 0.0
+
+    minimum_confidence_value = _safe_number(
+        minimum_confidence
+    )
+
+    if minimum_confidence_value is None:
+
+        minimum_confidence_value = 0.0
+
+    minimum_samples_value = _safe_number(
+        minimum_samples
+    )
+
+    if minimum_samples_value is None:
+
+        minimum_samples_value = 0
 
     score = _resolve_score(
         safe_candidate,
@@ -399,7 +485,12 @@ def validate_strategy_candidate(
     )
 
     missing_data = False
+
     rejection_reasons = []
+
+    #
+    # SCORE VALIDATION
+    #
 
     if score is None:
 
@@ -409,15 +500,19 @@ def validate_strategy_candidate(
             "missing_score"
         )
 
-    elif score < minimum_score:
+    elif score < minimum_score_value:
 
         rejection_reasons.append(
             "score_below_threshold"
         )
 
+    #
+    # CONFIDENCE VALIDATION
+    #
+
     if confidence is None:
 
-        if minimum_confidence > 0:
+        if minimum_confidence_value > 0:
 
             missing_data = True
 
@@ -425,13 +520,25 @@ def validate_strategy_candidate(
                 "missing_confidence"
             )
 
-    elif confidence < minimum_confidence:
+    elif confidence < minimum_confidence_value:
 
         rejection_reasons.append(
             "confidence_below_threshold"
         )
 
-    if minimum_samples > 0:
+    #
+    # SAMPLE VALIDATION
+    #
+    # Important contract:
+    #
+    # Missing sample count:
+    #     INSUFFICIENT_DATA
+    #
+    # Sample count exists but is below threshold:
+    #     REJECTED
+    #
+
+    if minimum_samples_value > 0:
 
         if sample_count is None:
 
@@ -441,22 +548,30 @@ def validate_strategy_candidate(
                 "missing_sample_count"
             )
 
-        elif sample_count < minimum_samples:
+        elif sample_count < minimum_samples_value:
 
             rejection_reasons.append(
                 "insufficient_sample_count"
             )
 
+    #
+    # MISSING REQUIRED DATA
+    #
+
     if missing_data:
 
-        return {
-            "status": STATUS_INSUFFICIENT_DATA,
-            "qualified": False,
-            "promotion_allowed": False,
-            "candidate": safe_candidate,
-            "reasons": reasons,
-            "evaluation": safe_evaluation,
-        }
+        return _build_result(
+            status=STATUS_INSUFFICIENT_DATA,
+            qualified=False,
+            promotion_allowed=False,
+            candidate=safe_candidate,
+            reasons=reasons,
+            evaluation=safe_evaluation,
+        )
+
+    #
+    # AVAILABLE DATA FAILED VALIDATION
+    #
 
     if rejection_reasons:
 
@@ -464,33 +579,56 @@ def validate_strategy_candidate(
             rejection_reasons
         )
 
-        return {
-            "status": STATUS_REJECTED,
-            "qualified": False,
-            "promotion_allowed": False,
-            "candidate": safe_candidate,
-            "reasons": reasons,
-            "evaluation": safe_evaluation,
-        }
+        return _build_result(
+            status=STATUS_REJECTED,
+            qualified=False,
+            promotion_allowed=False,
+            candidate=safe_candidate,
+            reasons=reasons,
+            evaluation=safe_evaluation,
+        )
 
-    return {
-        "status": STATUS_QUALIFIED,
-        "qualified": True,
-        "promotion_allowed": True,
-        "candidate": safe_candidate,
-        "reasons": [
-            "candidate_qualified"
+    #
+    # QUALIFIED
+    #
+
+    return _build_result(
+        status=STATUS_QUALIFIED,
+        qualified=True,
+        promotion_allowed=True,
+        candidate=safe_candidate,
+        reasons=[
+            "candidate_qualified",
         ],
-        "evaluation": safe_evaluation,
-    }
+        evaluation=safe_evaluation,
+    )
+
+
+def analyze_strategy_candidate(
+    candidate,
+    evaluation=None,
+    minimum_score=0.0,
+    minimum_confidence=0.0,
+    minimum_samples=0,
+):
+    """
+    Functional alias for
+    validate_strategy_candidate().
+    """
+
+    return validate_strategy_candidate(
+        candidate=candidate,
+        evaluation=evaluation,
+        minimum_score=minimum_score,
+        minimum_confidence=minimum_confidence,
+        minimum_samples=minimum_samples,
+    )
 
 
 class StrategyCandidateValidationEngine:
     """
-    Object-oriented wrapper.
-
-    Keeps the functional API available while allowing
-    integration with the institutional pipeline.
+    Object-oriented wrapper for the
+    Strategy Candidate Validation Engine.
     """
 
     def __init__(
@@ -500,16 +638,34 @@ class StrategyCandidateValidationEngine:
         minimum_samples=0,
     ):
 
-        self.minimum_score = (
+        safe_minimum_score = _safe_number(
             minimum_score
         )
 
-        self.minimum_confidence = (
+        safe_minimum_confidence = _safe_number(
             minimum_confidence
         )
 
-        self.minimum_samples = (
+        safe_minimum_samples = _safe_number(
             minimum_samples
+        )
+
+        self.minimum_score = (
+            safe_minimum_score
+            if safe_minimum_score is not None
+            else 0.0
+        )
+
+        self.minimum_confidence = (
+            safe_minimum_confidence
+            if safe_minimum_confidence is not None
+            else 0.0
+        )
+
+        self.minimum_samples = (
+            safe_minimum_samples
+            if safe_minimum_samples is not None
+            else 0
         )
 
     def validate(
@@ -517,6 +673,10 @@ class StrategyCandidateValidationEngine:
         candidate,
         evaluation=None,
     ):
+        """
+        Validate a strategy candidate using
+        configured thresholds.
+        """
 
         return validate_strategy_candidate(
             candidate=candidate,
@@ -535,28 +695,11 @@ class StrategyCandidateValidationEngine:
         candidate,
         evaluation=None,
     ):
+        """
+        Alias for validate().
+        """
 
         return self.validate(
             candidate=candidate,
             evaluation=evaluation,
         )
-
-
-def analyze_strategy_candidate(
-    candidate,
-    evaluation=None,
-    minimum_score=0.0,
-    minimum_confidence=0.0,
-    minimum_samples=0,
-):
-    """
-    Backward-friendly functional alias.
-    """
-
-    return validate_strategy_candidate(
-        candidate=candidate,
-        evaluation=evaluation,
-        minimum_score=minimum_score,
-        minimum_confidence=minimum_confidence,
-        minimum_samples=minimum_samples,
-    )
