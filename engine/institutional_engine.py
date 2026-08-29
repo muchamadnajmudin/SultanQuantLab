@@ -364,11 +364,26 @@ def run_portfolio_pipeline(
 def generate_reports(
     statistics,
     trades,
+    wfo_analysis=None,
+    monte_carlo_analysis=None,
+    risk_dashboard=None,
 ):
 
     """
     Generate standard text report,
     HTML report and trade journal.
+
+    Backward compatibility:
+
+        generate_reports(
+            statistics,
+            trades,
+        )
+
+    remains valid.
+
+    Institutional analysis can optionally be supplied
+    to the HTML report.
     """
 
     OUTPUT_DIR.mkdir(
@@ -376,6 +391,10 @@ def generate_reports(
         exist_ok=True,
     )
 
+
+    # --------------------------------------------------
+    # STANDARD TEXT REPORT
+    # --------------------------------------------------
 
     report = generate_report(
         statistics
@@ -390,10 +409,21 @@ def generate_reports(
     )
 
 
+    # --------------------------------------------------
+    # HTML REPORT
+    # --------------------------------------------------
+
     html_report = generate_html_report(
-        statistics
+        statistics,
+        wfo_analysis=wfo_analysis,
+        monte_carlo_analysis=monte_carlo_analysis,
+        risk_dashboard=risk_dashboard,
     )
 
+
+    # --------------------------------------------------
+    # TRADE JOURNAL
+    # --------------------------------------------------
 
     save_trade_journal(
         trades,
@@ -434,6 +464,13 @@ def run_monte_carlo_pipeline(
 
     """
     Execute Monte Carlo simulation and analysis.
+
+    Returns the complete Monte Carlo contract:
+
+        {
+            "simulation": ...,
+            "analysis": ...
+        }
     """
 
     monte_carlo = run_monte_carlo(
@@ -460,18 +497,115 @@ def run_monte_carlo_pipeline(
 # ==================================================
 
 def run_wfo_pipeline(
-    df,
+    data_file,
 ):
 
     """
     Execute Walk Forward Optimization.
+
+    IMPORTANT:
+
+    optimizer.wfo_runner.run_wfo() requires a file path,
+    not a prepared DataFrame.
+
+    Therefore this wrapper intentionally accepts
+    data_file and forwards it unchanged.
     """
 
     return run_wfo(
-        df,
+        data_file,
         config=WFO_CONFIG,
         parameter_grid=WFO_PARAMETER_GRID,
     )
+
+
+# ==================================================
+# ANALYSIS EXTRACTION HELPERS
+# ==================================================
+
+def _extract_monte_carlo_analysis(
+    monte_carlo,
+):
+
+    """
+    Extract Monte Carlo analysis from the complete
+    Monte Carlo pipeline contract.
+
+    Supported input:
+
+        {
+            "simulation": ...,
+            "analysis": ...
+        }
+
+    If the supplied value is already an analysis
+    dictionary, it is returned unchanged.
+
+    Returns None when no valid analysis is available.
+    """
+
+    if not isinstance(
+        monte_carlo,
+        dict,
+    ):
+
+        return None
+
+
+    analysis = monte_carlo.get(
+        "analysis"
+    )
+
+
+    if isinstance(
+        analysis,
+        dict,
+    ):
+
+        return analysis
+
+
+    return None
+
+
+def _extract_wfo_analysis(
+    wfo,
+):
+
+    """
+    Extract WFO analysis from the WFO pipeline result.
+
+    The WFO runner contract normally contains an
+    'analysis' field.
+
+    If the supplied value is already an analysis
+    dictionary, it is returned unchanged.
+
+    Returns None when no valid analysis is available.
+    """
+
+    if not isinstance(
+        wfo,
+        dict,
+    ):
+
+        return None
+
+
+    analysis = wfo.get(
+        "analysis"
+    )
+
+
+    if isinstance(
+        analysis,
+        dict,
+    ):
+
+        return analysis
+
+
+    return None
 
 
 # ==================================================
@@ -486,12 +620,34 @@ def run_risk_pipeline(
 
     """
     Build institutional risk dashboard.
+
+    Contract of build_risk_dashboard():
+
+        (
+            statistics,
+            wfo_analysis,
+            monte_carlo_analysis
+        )
+
+    The complete Monte Carlo and WFO pipeline results
+    are normalized here before being forwarded.
     """
+
+    wfo_analysis = _extract_wfo_analysis(
+        wfo
+    )
+
+    monte_carlo_analysis = (
+        _extract_monte_carlo_analysis(
+            monte_carlo
+        )
+    )
+
 
     return build_risk_dashboard(
         statistics,
-        monte_carlo=monte_carlo,
-        wfo=wfo,
+        wfo_analysis,
+        monte_carlo_analysis,
     )
 
 
@@ -510,16 +666,29 @@ def run_institutional_report(
     """
     Build final institutional report.
 
-    portfolio must contain the complete institutional
-    portfolio result contract.
+    The public compatibility wrapper retains the
+    portfolio argument because portfolio orchestration
+    remains part of the complete institutional pipeline.
+
+    The underlying report engine contract is:
+
+        build_institutional_report(
+            statistics,
+            monte_carlo=None,
+            wfo=None,
+            risk=None
+        )
+
+    Therefore the portfolio argument is intentionally
+    not forwarded as a keyword to the underlying report
+    engine.
     """
 
     return build_institutional_report(
-        portfolio=portfolio,
-        statistics=statistics,
+        statistics,
         monte_carlo=monte_carlo,
         wfo=wfo,
-        risk_dashboard=risk_dashboard,
+        risk=risk_dashboard,
     )
 
 
@@ -536,6 +705,30 @@ def execute_pipeline(
 
     Market data and indicators are prepared once
     and reused by all downstream operations.
+
+    High-level flow:
+
+        Data
+            ↓
+        Indicators
+            ↓
+        Institutional Portfolio
+            ↓
+        Strategy Selection
+            ↓
+        Backtest
+            ↓
+        Statistics
+            ↓
+        Reports
+            ↓
+        Monte Carlo
+            ↓
+        WFO
+            ↓
+        Risk Dashboard
+            ↓
+        Institutional Report
     """
 
 
@@ -629,12 +822,68 @@ def execute_pipeline(
 
 
     # ==================================================
+    # MONTE CARLO
+    # ==================================================
+
+    monte_carlo = run_monte_carlo_pipeline(
+        trades
+    )
+
+
+    # ==================================================
+    # WALK FORWARD OPTIMIZATION
+    #
+    # IMPORTANT:
+    # run_wfo() requires data_file, not DataFrame.
+    # ==================================================
+
+    wfo = run_wfo_pipeline(
+        data_file
+    )
+
+
+    # ==================================================
+    # ANALYSIS EXTRACTION
+    # ==================================================
+
+    monte_carlo_analysis = (
+        _extract_monte_carlo_analysis(
+            monte_carlo
+        )
+    )
+
+    wfo_analysis = (
+        _extract_wfo_analysis(
+            wfo
+        )
+    )
+
+
+    # ==================================================
+    # RISK DASHBOARD
+    # ==================================================
+
+    risk_dashboard = run_risk_pipeline(
+        statistics,
+        monte_carlo=monte_carlo,
+        wfo=wfo,
+    )
+
+
+    # ==================================================
     # REPORTS
+    #
+    # Generate standard reports after institutional
+    # analysis is available so the HTML report can
+    # receive WFO, Monte Carlo and Risk data.
     # ==================================================
 
     reports = generate_reports(
         statistics,
         trades,
+        wfo_analysis=wfo_analysis,
+        monte_carlo_analysis=monte_carlo_analysis,
+        risk_dashboard=risk_dashboard,
     )
 
 
@@ -653,35 +902,6 @@ def execute_pipeline(
     except Exception:
 
         visual_reports = None
-
-
-    # ==================================================
-    # MONTE CARLO
-    # ==================================================
-
-    monte_carlo = run_monte_carlo_pipeline(
-        trades
-    )
-
-
-    # ==================================================
-    # WALK FORWARD OPTIMIZATION
-    # ==================================================
-
-    wfo = run_wfo_pipeline(
-        df
-    )
-
-
-    # ==================================================
-    # RISK DASHBOARD
-    # ==================================================
-
-    risk_dashboard = run_risk_pipeline(
-        statistics,
-        monte_carlo=monte_carlo,
-        wfo=wfo,
-    )
 
 
     # ==================================================
