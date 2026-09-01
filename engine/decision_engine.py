@@ -2,7 +2,7 @@
 ==========================================
 SULTAN QUANT OS
 Portfolio Decision Engine
-Version : 3.1.0
+Version : 3.2.0
 ==========================================
 
 Responsibilities:
@@ -14,6 +14,7 @@ Responsibilities:
 - Evaluate Monte Carlo robustness
 - Evaluate overfitting risk
 - Build institutional readiness gate
+- Produce one final institutional decision
 - Preserve backward compatibility
 
 Institutional LIVE Gate:
@@ -27,7 +28,9 @@ Monte Carlo Robust >= 90%
 Portfolio Risk     must not be HIGH / CRITICAL
 Qualified Strategy > 0
 
-Important:
+IMPORTANT:
+
+The institutional gate is the SINGLE FINAL DECISION AUTHORITY.
 
 The legacy function signature remains:
 
@@ -36,6 +39,22 @@ The legacy function signature remains:
 Additional institutional evidence can be supplied
 inside the risk/result dictionaries without breaking
 existing callers.
+
+Decision principle:
+
+    All institutional gates must pass
+    -> APPROVED
+    Otherwise
+    -> NEEDS OPTIMIZATION
+
+Therefore:
+
+    decision == "APPROVED"
+        if and only if
+    live_ready is True
+
+No secondary legacy decision logic is allowed to
+override the institutional gate.
 """
 
 
@@ -44,9 +63,13 @@ existing callers.
 # ==================================================
 
 LIVE_MIN_PROFIT_FACTOR = 2.0
+
 LIVE_MAX_DRAWDOWN = 15.0
+
 LIVE_MIN_WFO_STABILITY = 80.0
+
 LIVE_MIN_WFO_ROBUSTNESS = 90.0
+
 LIVE_MIN_MONTE_CARLO_ROBUSTNESS = 90.0
 
 LIVE_ALLOWED_MONTE_CARLO_RISK = {
@@ -70,7 +93,8 @@ def _safe_float(
     """
     Safely convert a value to float.
 
-    Invalid values including NaN are converted to default.
+    Invalid values including NaN and infinity
+    are converted to default.
     """
 
     try:
@@ -80,6 +104,14 @@ def _safe_float(
         )
 
         if result != result:
+
+            return default
+
+        if result == float("inf"):
+
+            return default
+
+        if result == float("-inf"):
 
             return default
 
@@ -96,6 +128,11 @@ def _safe_float(
 def _safe_dict(
     value,
 ):
+    """
+    Return value when it is a dictionary.
+
+    Otherwise return an empty dictionary.
+    """
 
     if isinstance(
         value,
@@ -111,6 +148,14 @@ def _normalize_status(
     value,
     default="UNKNOWN",
 ):
+    """
+    Normalize status-like values.
+
+    Example:
+
+        " low "
+        -> "LOW"
+    """
 
     if value is None:
 
@@ -132,6 +177,17 @@ def _get_nested(
     *keys,
     default=None,
 ):
+    """
+    Safely retrieve nested dictionary values.
+
+    Example:
+
+        _get_nested(
+            data,
+            "wfo",
+            "stability_score",
+        )
+    """
 
     current = data
 
@@ -162,6 +218,17 @@ def _get_nested(
 def _get_drawdown(
     statistics,
 ):
+    """
+    Extract drawdown percentage.
+
+    Preferred key:
+
+        max_drawdown_percent
+
+    Legacy fallback:
+
+        max_drawdown
+    """
 
     statistics = _safe_dict(
         statistics
@@ -181,6 +248,9 @@ def _get_drawdown(
 def _get_profit_factor(
     statistics,
 ):
+    """
+    Extract profit factor.
+    """
 
     statistics = _safe_dict(
         statistics
@@ -201,6 +271,16 @@ def _get_profit_factor(
 def _select_best_strategy(
     results,
 ):
+    """
+    Select the strongest available strategy.
+
+    Ranking:
+
+        1. Strategy score
+        2. Profit factor
+
+    Existing strategy result structures are preserved.
+    """
 
     valid_results = []
 
@@ -230,6 +310,7 @@ def _select_best_strategy(
                     0,
                 )
             ),
+
             _get_profit_factor(
                 x.get(
                     "statistics",
@@ -247,6 +328,17 @@ def _select_best_strategy(
 def _count_qualified_strategies(
     results,
 ):
+    """
+    Count strategies that are sufficiently qualified
+    for institutional evaluation.
+
+    Current qualification:
+
+        evaluation_status not FAILED
+        evaluation_status not INSUFFICIENT_DATA
+        Profit Factor > 1.0
+        Score > 0
+    """
 
     count = 0
 
@@ -292,7 +384,10 @@ def _count_qualified_strategies(
             )
         )
 
-        if pf > 1.0 and score > 0:
+        if (
+            pf > 1.0
+            and score > 0
+        ):
 
             count += 1
 
@@ -307,7 +402,6 @@ def _extract_wfo(
     risk,
     results,
 ):
-
     """
     Search WFO evidence in both risk and strategy
     result structures.
@@ -318,6 +412,10 @@ def _extract_wfo(
     risk = _safe_dict(
         risk
     )
+
+    # --------------------------------------------------
+    # PRIMARY WFO SOURCE
+    # --------------------------------------------------
 
     wfo = risk.get(
         "wfo",
@@ -337,6 +435,10 @@ def _extract_wfo(
 
         wfo = {}
 
+    # --------------------------------------------------
+    # RISK SUMMARY
+    # --------------------------------------------------
+
     summary = risk.get(
         "summary",
         {},
@@ -349,6 +451,10 @@ def _extract_wfo(
 
         summary = {}
 
+    # --------------------------------------------------
+    # STABILITY
+    # --------------------------------------------------
+
     stability = wfo.get(
         "stability_score",
         summary.get(
@@ -359,6 +465,10 @@ def _extract_wfo(
             ),
         ),
     )
+
+    # --------------------------------------------------
+    # ROBUSTNESS
+    # --------------------------------------------------
 
     robustness = wfo.get(
         "wfo_robustness_score",
@@ -374,6 +484,10 @@ def _extract_wfo(
         ),
     )
 
+    # --------------------------------------------------
+    # OVERFITTING
+    # --------------------------------------------------
+
     overfitting = wfo.get(
         "overfitting_risk",
         risk.get(
@@ -382,9 +496,17 @@ def _extract_wfo(
         ),
     )
 
+    # --------------------------------------------------
+    # FALLBACK TO STRATEGY RESULTS
+    # --------------------------------------------------
+
     if (
         stability is None
         or robustness is None
+        or _normalize_status(
+            overfitting,
+            default="UNKNOWN",
+        ) == "UNKNOWN"
     ):
 
         for item in results:
@@ -400,7 +522,10 @@ def _extract_wfo(
                 "wfo",
                 item.get(
                     "walk_forward",
-                    {},
+                    item.get(
+                        "walk_forward_analysis",
+                        {},
+                    ),
                 ),
             )
 
@@ -426,12 +551,29 @@ def _extract_wfo(
                     ),
                 )
 
-            if overfitting == "UNKNOWN":
+            if (
+                _normalize_status(
+                    overfitting,
+                    default="UNKNOWN",
+                )
+                == "UNKNOWN"
+            ):
 
                 overfitting = item_wfo.get(
                     "overfitting_risk",
                     "UNKNOWN",
                 )
+
+            if (
+                stability is not None
+                and robustness is not None
+                and _normalize_status(
+                    overfitting,
+                    default="UNKNOWN",
+                ) != "UNKNOWN"
+            ):
+
+                break
 
     return {
 
@@ -466,7 +608,6 @@ def _extract_monte_carlo(
     risk,
     results,
 ):
-
     """
     Search Monte Carlo evidence in current and
     legacy result structures.
@@ -475,6 +616,10 @@ def _extract_monte_carlo(
     risk = _safe_dict(
         risk
     )
+
+    # --------------------------------------------------
+    # RISK SUMMARY
+    # --------------------------------------------------
 
     summary = risk.get(
         "summary",
@@ -487,6 +632,10 @@ def _extract_monte_carlo(
     ):
 
         summary = {}
+
+    # --------------------------------------------------
+    # PRIMARY MONTE CARLO SOURCE
+    # --------------------------------------------------
 
     mc = risk.get(
         "monte_carlo",
@@ -503,6 +652,10 @@ def _extract_monte_carlo(
 
         mc = {}
 
+    # --------------------------------------------------
+    # RISK LEVEL
+    # --------------------------------------------------
+
     risk_level = mc.get(
         "risk_level",
         mc.get(
@@ -516,6 +669,10 @@ def _extract_monte_carlo(
             ),
         ),
     )
+
+    # --------------------------------------------------
+    # ROBUSTNESS
+    # --------------------------------------------------
 
     robustness = mc.get(
         "robustness_score",
@@ -531,10 +688,15 @@ def _extract_monte_carlo(
         ),
     )
 
+    # --------------------------------------------------
+    # FALLBACK TO STRATEGY RESULTS
+    # --------------------------------------------------
+
     if (
         robustness is None
         or _normalize_status(
-            risk_level
+            risk_level,
+            default="UNKNOWN",
         ) == "UNKNOWN"
     ):
 
@@ -571,9 +733,13 @@ def _extract_monte_carlo(
                     ),
                 )
 
-            if _normalize_status(
-                risk_level
-            ) == "UNKNOWN":
+            if (
+                _normalize_status(
+                    risk_level,
+                    default="UNKNOWN",
+                )
+                == "UNKNOWN"
+            ):
 
                 risk_level = item_mc.get(
                     "risk_level",
@@ -582,6 +748,16 @@ def _extract_monte_carlo(
                         "UNKNOWN",
                     ),
                 )
+
+            if (
+                robustness is not None
+                and _normalize_status(
+                    risk_level,
+                    default="UNKNOWN",
+                ) != "UNKNOWN"
+            ):
+
+                break
 
     return {
 
@@ -613,8 +789,28 @@ def _evaluate_institutional_gate(
     monte_carlo,
     qualified_strategies,
 ):
+    """
+    Evaluate ALL institutional gates.
+
+    This function is the single source of truth for
+    LIVE readiness.
+
+    Every gate must pass.
+
+    Returns:
+
+        live_ready
+        readiness
+        decision
+        failed_gates
+        gate_results
+    """
 
     failures = []
+
+    # ==================================================
+    # PROFIT FACTOR
+    # ==================================================
 
     pf_pass = (
         pf >= LIVE_MIN_PROFIT_FACTOR
@@ -626,6 +822,10 @@ def _evaluate_institutional_gate(
             "Profit Factor below 2.0"
         )
 
+    # ==================================================
+    # DRAWDOWN
+    # ==================================================
+
     drawdown_pass = (
         drawdown <= LIVE_MAX_DRAWDOWN
     )
@@ -635,6 +835,10 @@ def _evaluate_institutional_gate(
         failures.append(
             "Drawdown above 15%"
         )
+
+    # ==================================================
+    # WFO STABILITY
+    # ==================================================
 
     wfo_stability = wfo.get(
         "stability"
@@ -652,6 +856,10 @@ def _evaluate_institutional_gate(
             "WFO stability below 80%"
         )
 
+    # ==================================================
+    # WFO ROBUSTNESS
+    # ==================================================
+
     wfo_robustness = wfo.get(
         "robustness"
     )
@@ -668,11 +876,16 @@ def _evaluate_institutional_gate(
             "WFO robustness below 90%"
         )
 
+    # ==================================================
+    # OVERFITTING
+    # ==================================================
+
     overfitting_risk = _normalize_status(
         wfo.get(
             "overfitting_risk",
             "UNKNOWN",
-        )
+        ),
+        default="UNKNOWN",
     )
 
     overfitting_pass = (
@@ -680,20 +893,34 @@ def _evaluate_institutional_gate(
         not in {
             "HIGH",
             "CRITICAL",
+            "UNKNOWN",
         }
     )
 
     if not overfitting_pass:
 
-        failures.append(
-            "WFO overfitting risk is high"
-        )
+        if overfitting_risk == "UNKNOWN":
+
+            failures.append(
+                "WFO overfitting risk is unknown"
+            )
+
+        else:
+
+            failures.append(
+                "WFO overfitting risk is high"
+            )
+
+    # ==================================================
+    # MONTE CARLO RISK
+    # ==================================================
 
     mc_risk = _normalize_status(
         monte_carlo.get(
             "risk",
             "UNKNOWN",
-        )
+        ),
+        default="UNKNOWN",
     )
 
     mc_risk_pass = (
@@ -706,6 +933,10 @@ def _evaluate_institutional_gate(
         failures.append(
             "Monte Carlo risk is not LOW"
         )
+
+    # ==================================================
+    # MONTE CARLO ROBUSTNESS
+    # ==================================================
 
     mc_robustness = monte_carlo.get(
         "robustness"
@@ -723,6 +954,10 @@ def _evaluate_institutional_gate(
             "Monte Carlo robustness below 90%"
         )
 
+    # ==================================================
+    # PORTFOLIO RISK
+    # ==================================================
+
     normalized_risk_status = _normalize_status(
         risk_status,
         default="UNKNOWN",
@@ -731,13 +966,27 @@ def _evaluate_institutional_gate(
     portfolio_risk_pass = (
         normalized_risk_status
         not in BLOCKED_RISK_STATUSES
+        and normalized_risk_status
+        != "UNKNOWN"
     )
 
     if not portfolio_risk_pass:
 
-        failures.append(
-            "Portfolio risk is HIGH or CRITICAL"
-        )
+        if normalized_risk_status == "UNKNOWN":
+
+            failures.append(
+                "Portfolio risk is unknown"
+            )
+
+        else:
+
+            failures.append(
+                "Portfolio risk is HIGH or CRITICAL"
+            )
+
+    # ==================================================
+    # QUALIFIED STRATEGY
+    # ==================================================
 
     strategy_pass = (
         qualified_strategies > 0
@@ -749,7 +998,13 @@ def _evaluate_institutional_gate(
             "No qualified strategy available"
         )
 
-    live_ready = not failures
+    # ==================================================
+    # FINAL GATE
+    # ==================================================
+
+    live_ready = (
+        len(failures) == 0
+    )
 
     if live_ready:
 
@@ -757,7 +1012,9 @@ def _evaluate_institutional_gate(
             "READY FOR LIVE TRADING"
         )
 
-        decision = "APPROVED"
+        decision = (
+            "APPROVED"
+        )
 
     else:
 
@@ -765,7 +1022,9 @@ def _evaluate_institutional_gate(
             "NOT READY FOR LIVE TRADING"
         )
 
-        decision = "NEEDS OPTIMIZATION"
+        decision = (
+            "NEEDS OPTIMIZATION"
+        )
 
     return {
 
@@ -816,6 +1075,74 @@ def _evaluate_institutional_gate(
 
 
 # ==================================================
+# NO STRATEGY RESULT
+# ==================================================
+
+def _no_strategy_result(
+    reason,
+    qualified_strategies=0,
+):
+    """
+    Standardized result when no strategy is available.
+    """
+
+    return {
+
+        "decision":
+            "NO TRADE",
+
+        "best_strategy":
+            None,
+
+        "profit_factor":
+            0,
+
+        "drawdown":
+            0,
+
+        "score":
+            0,
+
+        "risk_status":
+            "UNKNOWN",
+
+        "readiness":
+            "NOT READY FOR LIVE TRADING",
+
+        "live_ready":
+            False,
+
+        "failed_gates": [
+            reason
+        ],
+
+        "gate_results": {},
+
+        "qualified_strategies":
+            qualified_strategies,
+
+        "reason":
+            reason,
+
+        "wfo_stability":
+            None,
+
+        "wfo_robustness":
+            None,
+
+        "overfitting_risk":
+            "UNKNOWN",
+
+        "monte_carlo_risk":
+            "UNKNOWN",
+
+        "monte_carlo_robustness":
+            None,
+
+    }
+
+
+# ==================================================
 # MAIN DECISION
 # ==================================================
 
@@ -824,7 +1151,7 @@ def evaluate_decision(
     results,
 ):
     """
-    Institutional portfolio decision.
+    Evaluate final institutional portfolio decision.
 
     Backward compatible with:
 
@@ -833,51 +1160,38 @@ def evaluate_decision(
             results,
         )
 
-    Returns both the legacy decision and the new
-    institutional readiness gate.
+    IMPORTANT:
+
+    The institutional gate is now the SINGLE FINAL
+    DECISION AUTHORITY.
+
+    Therefore:
+
+        gate passed
+            -> decision = APPROVED
+
+        gate failed
+            -> decision = NEEDS OPTIMIZATION
+
+    The only exception is absence of any usable strategy,
+    which remains:
+
+        decision = NO TRADE
     """
+
+    # ==================================================
+    # NO RESULTS
+    # ==================================================
 
     if not results:
 
-        return {
+        return _no_strategy_result(
+            "No strategy available"
+        )
 
-            "decision":
-                "NO TRADE",
-
-            "best_strategy":
-                None,
-
-            "profit_factor":
-                0,
-
-            "drawdown":
-                0,
-
-            "score":
-                0,
-
-            "risk_status":
-                "UNKNOWN",
-
-            "readiness":
-                "NOT READY FOR LIVE TRADING",
-
-            "live_ready":
-                False,
-
-            "failed_gates": [
-                "No strategy available"
-            ],
-
-            "gate_results": {},
-
-            "qualified_strategies":
-                0,
-
-            "reason":
-                "No strategy available",
-
-        }
+    # ==================================================
+    # NORMALIZE RISK
+    # ==================================================
 
     if not isinstance(
         risk,
@@ -886,51 +1200,23 @@ def evaluate_decision(
 
         risk = {}
 
+    # ==================================================
+    # SELECT BEST STRATEGY
+    # ==================================================
+
     best = _select_best_strategy(
         results
     )
 
     if best is None:
 
-        return {
+        return _no_strategy_result(
+            "No valid strategy available"
+        )
 
-            "decision":
-                "NO TRADE",
-
-            "best_strategy":
-                None,
-
-            "profit_factor":
-                0,
-
-            "drawdown":
-                0,
-
-            "score":
-                0,
-
-            "risk_status":
-                "UNKNOWN",
-
-            "readiness":
-                "NOT READY FOR LIVE TRADING",
-
-            "live_ready":
-                False,
-
-            "failed_gates": [
-                "No valid strategy available"
-            ],
-
-            "gate_results": {},
-
-            "qualified_strategies":
-                0,
-
-            "reason":
-                "No valid strategy available",
-
-        }
+    # ==================================================
+    # BEST STRATEGY STATISTICS
+    # ==================================================
 
     statistics = _safe_dict(
         best.get(
@@ -954,23 +1240,39 @@ def evaluate_decision(
         )
     )
 
+    # ==================================================
+    # PORTFOLIO RISK STATUS
+    # ==================================================
+
     risk_status = _normalize_status(
         risk.get(
             "status",
-            "HIGH",
+            "UNKNOWN",
         ),
-        default="HIGH",
+        default="UNKNOWN",
     )
+
+    # ==================================================
+    # EXTRACT WFO EVIDENCE
+    # ==================================================
 
     wfo = _extract_wfo(
         risk,
         results,
     )
 
+    # ==================================================
+    # EXTRACT MONTE CARLO EVIDENCE
+    # ==================================================
+
     monte_carlo = _extract_monte_carlo(
         risk,
         results,
     )
+
+    # ==================================================
+    # QUALIFIED STRATEGIES
+    # ==================================================
 
     qualified_strategies = (
         _count_qualified_strategies(
@@ -978,77 +1280,46 @@ def evaluate_decision(
         )
     )
 
+    # ==================================================
+    # FINAL INSTITUTIONAL GATE
+    # ==================================================
+
     gate = _evaluate_institutional_gate(
         pf=pf,
+
         drawdown=drawdown,
+
         risk_status=risk_status,
+
         wfo=wfo,
+
         monte_carlo=monte_carlo,
+
         qualified_strategies=qualified_strategies,
     )
 
-    if risk_status in BLOCKED_RISK_STATUSES:
+    # ==================================================
+    # SINGLE FINAL DECISION
+    #
+    # IMPORTANT:
+    #
+    # Do NOT re-evaluate PF / DD / risk here.
+    #
+    # The institutional gate has already evaluated
+    # ALL evidence.
+    # ==================================================
 
-        legacy_decision = "BLOCKED"
+    decision = gate[
+        "decision"
+    ]
 
-        legacy_reason = (
-            "Portfolio risk is too high."
-        )
+    # ==================================================
+    # FINAL REASON
+    # ==================================================
 
-    elif pf < 1.0:
-
-        legacy_decision = "NOT RECOMMENDED"
-
-        legacy_reason = (
-            "Best strategy has negative "
-            "trading expectancy."
-        )
-
-    elif pf < 1.2:
-
-        legacy_decision = "NEEDS OPTIMIZATION"
-
-        legacy_reason = (
-            "Profit factor is below "
-            "institutional minimum."
-        )
-
-    elif drawdown > 30:
-
-        legacy_decision = "NEEDS OPTIMIZATION"
-
-        legacy_reason = (
-            "Portfolio drawdown is excessive."
-        )
-
-    elif drawdown > 20:
-
-        legacy_decision = "CAUTIOUS"
-
-        legacy_reason = (
-            "Drawdown is elevated."
-        )
-
-    elif pf >= 2.0:
-
-        legacy_decision = "APPROVED"
-
-        legacy_reason = (
-            "Strategy meets strong "
-            "profitability threshold."
-        )
-
-    else:
-
-        legacy_decision = "NEEDS OPTIMIZATION"
-
-        legacy_reason = (
-            "Strategy is profitable but "
-            "does not yet meet institutional "
-            "quality threshold."
-        )
-
-    if gate["live_ready"]:
+    if gate[
+        "live_ready"
+    ]:
 
         reason = (
             "All institutional readiness "
@@ -1058,18 +1329,36 @@ def evaluate_decision(
     else:
 
         reason = "; ".join(
-            gate["failed_gates"]
+            gate[
+                "failed_gates"
+            ]
         )
+
+    # ==================================================
+    # FINAL RESULT
+    # ==================================================
 
     return {
 
+        # --------------------------------------------------
+        # FINAL DECISION
+        # --------------------------------------------------
+
         "decision":
-            legacy_decision,
+            decision,
+
+        # --------------------------------------------------
+        # BEST STRATEGY
+        # --------------------------------------------------
 
         "best_strategy":
             best.get(
                 "name"
             ),
+
+        # --------------------------------------------------
+        # CORE METRICS
+        # --------------------------------------------------
 
         "profit_factor":
             round(
@@ -1089,40 +1378,82 @@ def evaluate_decision(
                 2,
             ),
 
+        # --------------------------------------------------
+        # PORTFOLIO RISK
+        # --------------------------------------------------
+
         "risk_status":
             risk_status,
+
+        # --------------------------------------------------
+        # REASON
+        # --------------------------------------------------
 
         "reason":
             reason,
 
+        # --------------------------------------------------
+        # INSTITUTIONAL READINESS
+        # --------------------------------------------------
+
         "readiness":
-            gate["readiness"],
+            gate[
+                "readiness"
+            ],
 
         "live_ready":
-            gate["live_ready"],
+            gate[
+                "live_ready"
+            ],
 
         "failed_gates":
-            gate["failed_gates"],
+            gate[
+                "failed_gates"
+            ],
 
         "gate_results":
-            gate["gate_results"],
+            gate[
+                "gate_results"
+            ],
+
+        # --------------------------------------------------
+        # STRATEGY QUALIFICATION
+        # --------------------------------------------------
 
         "qualified_strategies":
             qualified_strategies,
 
+        # --------------------------------------------------
+        # WFO EVIDENCE
+        # --------------------------------------------------
+
         "wfo_stability":
-            wfo["stability"],
+            wfo[
+                "stability"
+            ],
 
         "wfo_robustness":
-            wfo["robustness"],
+            wfo[
+                "robustness"
+            ],
 
         "overfitting_risk":
-            wfo["overfitting_risk"],
+            wfo[
+                "overfitting_risk"
+            ],
+
+        # --------------------------------------------------
+        # MONTE CARLO EVIDENCE
+        # --------------------------------------------------
 
         "monte_carlo_risk":
-            monte_carlo["risk"],
+            monte_carlo[
+                "risk"
+            ],
 
         "monte_carlo_robustness":
-            monte_carlo["robustness"],
+            monte_carlo[
+                "robustness"
+            ],
 
     }

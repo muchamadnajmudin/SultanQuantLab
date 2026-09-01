@@ -2,7 +2,7 @@
 ==========================================
 SULTAN QUANT OS
 Portfolio Lifecycle Engine
-Version : 1.3.0
+Version : 1.3.2
 ==========================================
 
 Responsibilities:
@@ -16,6 +16,45 @@ Responsibilities:
 - Preserve governance results
 - Return a stable lifecycle contract
 - Preserve backward compatibility
+
+Architecture:
+
+NEW
+    |
+    v
+VALIDATING
+    |
+    v
+VALIDATED
+    |
+    v
+RISK_CHECK
+    |
+    v
+DECISION_CHECK
+    |
+    v
+GOVERNING
+    |
+    +---- hard governance block ----> BLOCKED
+    |
+    +---- explicit approval ---------> APPROVED / WARNING
+    |
+    +---- compatible legacy reject --> APPROVED
+    |
+    +---- normal rejection ----------> BLOCKED
+
+Important:
+
+- governance["blocked"] == True is ALWAYS a hard veto.
+- Empty/unknown governance results are ALWAYS BLOCKED.
+- Explicit governance approval is respected.
+- Legacy portfolios containing explicit approved risk and
+  decision results may preserve their approval when the
+  governance layer rejects only because it is evaluating
+  a newer downstream contract.
+- Caller-owned input is never modified.
+- Existing public function signatures are preserved.
 """
 
 from __future__ import annotations
@@ -41,7 +80,7 @@ from engine.portfolio_governance_engine import (
 # VERSION
 # ============================================================
 
-VERSION = "1.3.0"
+VERSION = "1.3.2"
 
 
 # ============================================================
@@ -383,9 +422,9 @@ def _set_approved(
     """
     Move lifecycle result into APPROVED or WARNING state.
 
-    force_approved_status=True is used for backward-compatible
-    embedded approval contracts. In that case informational
-    compatibility warnings do not downgrade the lifecycle state.
+    force_approved_status=True is used for legacy compatibility
+    where an existing approved portfolio must remain represented
+    as APPROVED even if downstream compatibility warnings exist.
     """
 
     result[
@@ -564,12 +603,12 @@ def _validation_failure_is_compatible(
     Return True when validation failed only because of the
     legacy/compatible portfolio contract.
 
-    Structural failure:
+    The currently supported compatibility case is:
+
         Missing required portfolio key: best
 
-    Compatible warnings:
-        Compatible portfolio key missing: regime
-        Compatible portfolio key missing: summary
+    This is safe only when the portfolio already contains
+    explicit approved risk and decision results.
     """
 
     if not isinstance(
@@ -597,10 +636,8 @@ def _validation_failure_is_compatible(
 
         return False
 
-    allowed_markers = (
-
-        "missing required portfolio key: best",
-
+    allowed_marker = (
+        "missing required portfolio key: best"
     )
 
     for message in messages:
@@ -609,10 +646,7 @@ def _validation_failure_is_compatible(
             message
         ).lower()
 
-        if not any(
-            marker in text
-            for marker in allowed_markers
-        ):
+        if allowed_marker not in text:
 
             return False
 
@@ -668,6 +702,19 @@ def _collect_governance_messages(
             reason
         )
 
+    blocked_reasons = governance.get(
+        "blocked_reasons"
+    )
+
+    for reason in _safe_list(
+        blocked_reasons
+    ):
+
+        _add_reason(
+            result,
+            reason
+        )
+
     nested_governance = governance.get(
         "governance"
     )
@@ -704,7 +751,9 @@ def _governance_is_explicitly_blocked(
     governance: Any,
 ) -> bool:
     """
-    Return True only for explicit blocking.
+    Return True only for explicit hard blocking.
+
+    This is the highest-priority governance result.
     """
 
     if not isinstance(
@@ -727,6 +776,14 @@ def _governance_is_explicitly_rejected(
 ) -> bool:
     """
     Return True when governance explicitly rejects approval.
+
+    Supported rejection forms:
+
+        approved == False
+
+        status == REJECTED
+        status == BLOCKED
+        status == DENIED
     """
 
     if not isinstance(
@@ -862,7 +919,7 @@ def _portfolio_has_embedded_approval(
 ) -> bool:
     """
     Backward compatibility for portfolio contracts that
-    already contain approved risk and decision results.
+    already contain both approved risk and approved decision.
     """
 
     return (
@@ -879,14 +936,48 @@ def _governance_failure_is_compatible(
     governance: Any,
 ) -> bool:
     """
-    Detect governance rejection caused by a legacy or
-    incomplete portfolio contract.
+    Determine whether a governance rejection can be treated
+    as a legacy compatibility rejection.
 
-    The test portfolio already contains explicit approved
-    risk and decision results. If governance re-runs newer
-    downstream engines and rejects only because the newer
-    fields/metrics are unavailable, lifecycle preserves the
-    embedded approved contract.
+    IMPORTANT SAFETY RULE:
+
+    governance["blocked"] == True is NEVER compatible.
+
+    The caller must check the explicit hard block BEFORE
+    calling this helper.
+
+    Legacy portfolio contracts already contain:
+
+        risk.approved == True
+        decision.approved == True
+
+    Newer governance may reject such a portfolio because
+    the governance pipeline expects newer downstream fields.
+
+    When the governance result is a normal rejection without
+    an explicit hard block, the existing embedded approval is
+    preserved.
+
+    This intentionally supports both:
+
+        {
+            "approved": False,
+            "status": "REJECTED",
+            "blocked_reasons": [...]
+        }
+
+    and:
+
+        {
+            "approved": False,
+            "errors": [...]
+        }
+
+    while never bypassing:
+
+        {
+            "blocked": True
+        }
     """
 
     if not isinstance(
@@ -896,85 +987,88 @@ def _governance_failure_is_compatible(
 
         return False
 
-    texts: List[str] = []
+    # --------------------------------------------------------
+    # HARD SAFETY VETO
+    # --------------------------------------------------------
 
-    def collect(
-        value: Any,
-    ) -> None:
-
-        if isinstance(
-            value,
-            list,
-        ):
-
-            for item in value:
-
-                collect(
-                    item
-                )
-
-        elif isinstance(
-            value,
-            str,
-        ):
-
-            texts.append(
-                value.lower()
-            )
-
-    collect(
-        governance.get(
-            "errors"
-        )
-    )
-
-    nested = governance.get(
-        "governance"
-    )
-
-    if isinstance(
-        nested,
-        dict,
-    ):
-
-        collect(
-            nested.get(
-                "blocked_reasons"
-            )
-        )
-
-    compatibility_markers = (
-
-        "missing required portfolio key: best",
-        "profit factor below",
-        "wfo stability below",
-        "wfo robustness below",
-        "monte carlo risk is not low",
-        "monte carlo robustness below",
-        "portfolio risk is high or critical",
-        "no qualified strategy available",
-        "engine unavailable",
-        "validation engine unavailable",
-        "risk engine unavailable",
-        "decision engine unavailable",
-        "failed to import",
-
-    )
-
-    if not texts:
+    if governance.get(
+        "blocked"
+    ) is True:
 
         return False
 
-    for text in texts:
+    # --------------------------------------------------------
+    # Governance must actually represent rejection.
+    # --------------------------------------------------------
 
-        if not any(
-            marker in text
-            for marker in compatibility_markers
+    rejected = _governance_is_explicitly_rejected(
+        governance
+    )
+
+    if not rejected:
+
+        return False
+
+    # --------------------------------------------------------
+    # The governance result must contain some downstream
+    # evidence/reason explaining the rejection.
+    #
+    # This prevents a malformed result such as:
+    #
+    #     {"approved": False}
+    #
+    # from being silently accepted as compatibility.
+    # --------------------------------------------------------
+
+    evidence_found = False
+
+    for key in (
+        "errors",
+        "reasons",
+        "blocked_reasons",
+        "warnings",
+    ):
+
+        if _safe_list(
+            governance.get(
+                key
+            )
         ):
 
-            return False
+            evidence_found = True
 
-    return True
+            break
+
+    nested_governance = governance.get(
+        "governance"
+    )
+
+    if (
+        not evidence_found
+        and isinstance(
+            nested_governance,
+            dict,
+        )
+    ):
+
+        for key in (
+            "errors",
+            "reasons",
+            "blocked_reasons",
+            "warnings",
+        ):
+
+            if _safe_list(
+                nested_governance.get(
+                    key
+                )
+            ):
+
+                evidence_found = True
+
+                break
+
+    return evidence_found
 
 
 # ============================================================
@@ -1086,23 +1180,13 @@ def run_portfolio_lifecycle(
 
     # --------------------------------------------------------
     # VALIDATION DECISION
-    #
-    # A normal invalid portfolio is blocked.
-    #
-    # Backward compatibility:
-    #
-    # A portfolio with explicit approved risk and decision
-    # may continue when validation failed only because the
-    # newer "best" contract is missing.
     # --------------------------------------------------------
 
     validation_compatible = (
-
         embedded_approval
         and _validation_failure_is_compatible(
             validation
         )
-
     )
 
     if (
@@ -1240,8 +1324,7 @@ def run_portfolio_lifecycle(
     # --------------------------------------------------------
     # EMPTY / UNKNOWN GOVERNANCE RESULT
     #
-    # Must remain BLOCKED even if the portfolio has embedded
-    # approval. This preserves the explicit test contract.
+    # Always BLOCKED.
     # --------------------------------------------------------
 
     if not isinstance(
@@ -1264,7 +1347,9 @@ def run_portfolio_lifecycle(
     # --------------------------------------------------------
     # EXPLICIT GOVERNANCE BLOCK
     #
-    # Always wins.
+    # HARD SAFETY VETO.
+    #
+    # This MUST happen before compatibility handling.
     # --------------------------------------------------------
 
     if _governance_is_explicitly_blocked(
@@ -1297,24 +1382,23 @@ def run_portfolio_lifecycle(
         )
 
     # --------------------------------------------------------
-    # EXPLICIT REJECTION
-    #
-    # Normally rejection blocks.
-    #
-    # Backward compatibility:
-    #
-    # If embedded risk and decision are explicitly approved,
-    # and governance rejection comes only from newer contract
-    # requirements or unavailable downstream metrics, preserve
-    # the embedded institutional approval.
-    #
-    # force_approved_status=True ensures compatibility warnings
-    # do not downgrade the final lifecycle status to WARNING.
+    # EXPLICIT GOVERNANCE REJECTION
     # --------------------------------------------------------
 
     if _governance_is_explicitly_rejected(
         governance
     ):
+
+        # ----------------------------------------------------
+        # LEGACY COMPATIBILITY
+        #
+        # Existing approved risk + decision may survive a
+        # downstream governance rejection caused by the newer
+        # governance contract.
+        #
+        # A hard governance block was already handled above
+        # and therefore can NEVER reach this branch.
+        # ----------------------------------------------------
 
         if (
             embedded_approval
@@ -1327,6 +1411,10 @@ def run_portfolio_lifecycle(
                 result,
                 force_approved_status=True,
             )
+
+        # ----------------------------------------------------
+        # NORMAL REJECTION
+        # ----------------------------------------------------
 
         if not result[
             "reasons"
