@@ -1,4 +1,4 @@
-"""
+﻿"""
 ==========================================
 SULTAN QUANT OS
 Institutional Engine
@@ -85,6 +85,24 @@ from engine.institutional_portfolio_engine import (
 )
 
 
+# ==================================================
+# FINAL DECISION GATE
+# ==================================================
+
+from engine.decision_engine import (
+    evaluate_decision,
+)
+
+
+
+
+# ==================================================
+# PORTFOLIO LIFECYCLE
+# ==================================================
+
+from engine.portfolio_lifecycle_engine import (
+    run_portfolio_lifecycle,
+)
 # ==================================================
 # REPORTS
 # ==================================================
@@ -904,6 +922,69 @@ def execute_pipeline(
     )
 
 
+    # ==================================================
+    # FINAL INSTITUTIONAL DECISION GATE
+    #
+    # IMPORTANT:
+    #
+    # institutional_portfolio_engine performs the
+    # backward-compatible preliminary portfolio decision.
+    # The COMPLETE institutional pipeline must perform the
+    # single final decision only after WFO, Monte Carlo and
+    # portfolio-risk evidence are all available.
+    # ==================================================
+
+    final_risk = (
+        dict(risk_dashboard)
+        if isinstance(risk_dashboard, dict)
+        else {}
+    )
+
+    # Attach the complete institutional evidence to the
+    # decision-engine input without changing the downstream
+    # risk-dashboard contract.
+    final_risk["wfo"] = (
+        wfo_analysis
+        if isinstance(wfo_analysis, dict)
+        else {}
+    )
+
+    final_risk["monte_carlo"] = (
+        monte_carlo_analysis
+        if isinstance(monte_carlo_analysis, dict)
+        else {}
+    )
+
+    final_risk["statistics"] = (
+        dict(statistics)
+        if isinstance(statistics, dict)
+        else {}
+    )
+
+    decision = evaluate_decision(
+        final_risk,
+        strategy_results,
+    )
+
+    # Keep the portfolio result contract backward compatible
+    # while replacing its preliminary decision with the true
+    # final institutional gate result.
+    if isinstance(portfolio_result, dict):
+        portfolio_result = dict(portfolio_result)
+        portfolio_result["decision"] = decision
+
+
+
+    # ==================================================
+    # PORTFOLIO LIFECYCLE / GOVERNANCE
+    # ==================================================
+
+    lifecycle = run_portfolio_lifecycle(
+        portfolio_result
+    )
+
+
+
     reports = generate_reports(
         statistics,
         trades,
@@ -960,6 +1041,9 @@ def execute_pipeline(
         "best":
             best_strategy,
 
+        "decision":
+            decision,
+
         "strategy_name":
             strategy_name,
 
@@ -987,7 +1071,12 @@ def execute_pipeline(
         "risk_dashboard":
             risk_dashboard,
 
-        "institutional_report":
+        
+
+        "lifecycle":
+            lifecycle,
+
+"institutional_report":
             institutional_report,
 
     }
