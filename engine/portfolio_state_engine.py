@@ -2,7 +2,7 @@
 ==========================================
 SULTAN QUANT OS
 Portfolio State Engine
-Version : 1.0.0
+Version : 1.1.1
 ==========================================
 
 Responsibilities:
@@ -14,6 +14,7 @@ Responsibilities:
 - Prevent invalid state transitions
 - Preserve input portfolio data
 - Provide safe fallback behaviour
+- Support governance lifecycle state
 
 This module does NOT replace:
 
@@ -47,7 +48,14 @@ RISK_CHECK
     v
 DECISION_CHECK
     |
-    +---- decision rejection ----> BLOCKED
+    +---- decision failure ------> BLOCKED
+    |
+    +---- backward compatibility -> APPROVED
+    |
+    v
+GOVERNING
+    |
+    +---- governance failure ----> BLOCKED
     |
     v
 APPROVED
@@ -58,11 +66,22 @@ ACTIVE
     +---- warning ---------------> WARNING
     |
     +---- rebalance -------------> REBALANCING
-    |
-    +---- governance failure ----> BLOCKED
 
-The engine intentionally has no dependency on live trading,
-portfolio governance implementation details, or strategy engines.
+WARNING
+    |
+    +---- recovered -------------> ACTIVE
+    |
+    +---- rebalance -------------> REBALANCING
+    |
+    +---- failure ---------------> BLOCKED
+
+REBALANCING
+    |
+    +---- completed -------------> ACTIVE
+    |
+    +---- warning ---------------> WARNING
+    |
+    +---- failure ---------------> BLOCKED
 
 Backward compatibility principle:
 
@@ -82,7 +101,7 @@ from typing import Any, Dict, List
 # VERSION
 # ==========================================================
 
-VERSION = "1.0.0"
+VERSION = "1.1.1"
 
 
 # ==========================================================
@@ -92,11 +111,14 @@ VERSION = "1.0.0"
 STATE_NEW = "NEW"
 
 STATE_VALIDATING = "VALIDATING"
+
 STATE_VALIDATED = "VALIDATED"
 
 STATE_RISK_CHECK = "RISK_CHECK"
 
 STATE_DECISION_CHECK = "DECISION_CHECK"
+
+STATE_GOVERNING = "GOVERNING"
 
 STATE_APPROVED = "APPROVED"
 
@@ -140,6 +162,7 @@ REQUIRED_STATE_KEYS = (
 # ==========================================================
 
 STATE_TRANSITIONS = {
+
     STATE_NEW: {
         STATE_VALIDATING,
     },
@@ -160,6 +183,17 @@ STATE_TRANSITIONS = {
     },
 
     STATE_DECISION_CHECK: {
+
+        # New governance lifecycle.
+        STATE_GOVERNING,
+
+        # Backward compatibility.
+        STATE_APPROVED,
+
+        STATE_BLOCKED,
+    },
+
+    STATE_GOVERNING: {
         STATE_APPROVED,
         STATE_BLOCKED,
     },
@@ -199,42 +233,93 @@ STATE_TRANSITIONS = {
 # INTERNAL HELPERS
 # ==========================================================
 
-def _safe_portfolio(portfolio: Any) -> Dict[str, Any]:
+def _safe_portfolio(
+    portfolio: Any,
+) -> Dict[str, Any]:
     """
     Return a safe independent portfolio copy.
 
-    Non-dictionary inputs are converted into an empty dictionary.
+    Non-dictionary inputs are converted into
+    an empty dictionary.
     """
 
-    if not isinstance(portfolio, dict):
+    if not isinstance(
+        portfolio,
+        dict,
+    ):
         return {}
 
-    return deepcopy(portfolio)
+    try:
+
+        return deepcopy(
+            portfolio
+        )
+
+    except Exception:
+
+        return dict(
+            portfolio
+        )
 
 
-def _safe_history(history: Any) -> List[Dict[str, Any]]:
+def _safe_history(
+    history: Any,
+) -> List[Dict[str, Any]]:
     """
     Return a safe independent history list.
     """
 
-    if not isinstance(history, list):
+    if not isinstance(
+        history,
+        list,
+    ):
         return []
 
-    safe_history: List[Dict[str, Any]] = []
+    safe_history: List[
+        Dict[str, Any]
+    ] = []
 
     for item in history:
-        if isinstance(item, dict):
-            safe_history.append(deepcopy(item))
+
+        if isinstance(
+            item,
+            dict,
+        ):
+
+            try:
+
+                safe_history.append(
+                    deepcopy(
+                        item
+                    )
+                )
+
+            except Exception:
+
+                safe_history.append(
+                    dict(
+                        item
+                    )
+                )
 
     return safe_history
 
 
-def _is_known_state(state: Any) -> bool:
+def _is_known_state(
+    state: Any,
+) -> bool:
     """
-    Check whether a state exists in the transition map.
+    Check whether a state exists in
+    the transition map.
     """
 
-    return isinstance(state, str) and state in STATE_TRANSITIONS
+    return (
+        isinstance(
+            state,
+            str,
+        )
+        and state in STATE_TRANSITIONS
+    )
 
 
 def _is_valid_transition(
@@ -243,19 +328,29 @@ def _is_valid_transition(
 ) -> bool:
     """
     Check whether a transition is allowed.
-
-    Unknown states are always invalid.
     """
 
-    if not _is_known_state(current_state):
+    if not _is_known_state(
+        current_state
+    ):
         return False
 
-    if not _is_known_state(next_state):
+    if not _is_known_state(
+        next_state
+    ):
         return False
 
-    allowed_states = STATE_TRANSITIONS.get(current_state, set())
+    allowed_states = (
+        STATE_TRANSITIONS.get(
+            current_state,
+            set(),
+        )
+    )
 
-    return next_state in allowed_states
+    return (
+        next_state
+        in allowed_states
+    )
 
 
 def _history_entry(
@@ -267,8 +362,13 @@ def _history_entry(
     """
 
     return {
-        "previous_state": previous_state,
-        "state": state,
+
+        "previous_state":
+            previous_state,
+
+        "state":
+            state,
+
     }
 
 
@@ -292,33 +392,38 @@ def create_portfolio_state(
     Create a new portfolio lifecycle state.
 
     Unknown input states safely fall back to NEW.
-
-    Parameters
-    ----------
-    portfolio:
-        Portfolio dictionary.
-
-    state:
-        Initial lifecycle state.
-
-    Returns
-    -------
-    dict
-        Stable portfolio state contract.
     """
 
-    safe_portfolio = _safe_portfolio(portfolio)
+    safe_portfolio = _safe_portfolio(
+        portfolio
+    )
 
-    if not _is_known_state(state):
+    if not _is_known_state(
+        state
+    ):
+
         state = STATE_NEW
 
     return {
-        "portfolio": safe_portfolio,
-        "state": state,
-        "previous_state": None,
-        "history": [],
-        "is_terminal": state in TERMINAL_STATES,
-        "is_valid_transition": True,
+
+        "portfolio":
+            safe_portfolio,
+
+        "state":
+            state,
+
+        "previous_state":
+            None,
+
+        "history":
+            [],
+
+        "is_terminal":
+            state in TERMINAL_STATES,
+
+        "is_valid_transition":
+            True,
+
     }
 
 
@@ -329,86 +434,145 @@ def transition_portfolio_state(
     """
     Transition portfolio lifecycle state.
 
-    Invalid transitions do not modify the current state.
+    Invalid transitions do not modify
+    the current state.
 
-    The returned result always follows the stable contract.
-
-    Parameters
-    ----------
-    state_result:
-        Existing portfolio state result.
-
-    next_state:
-        Target lifecycle state.
-
-    Returns
-    -------
-    dict
-        Updated state contract.
+    The returned result always follows
+    the stable contract.
     """
 
-    if not isinstance(state_result, dict):
-        current_result = create_portfolio_state()
-        current_result["is_valid_transition"] = False
+    if not isinstance(
+        state_result,
+        dict,
+    ):
+
+        current_result = (
+            create_portfolio_state()
+        )
+
+        current_result[
+            "is_valid_transition"
+        ] = False
+
         return current_result
 
     portfolio = _safe_portfolio(
-        state_result.get("portfolio")
+        state_result.get(
+            "portfolio"
+        )
     )
 
-    current_state = state_result.get(
-        "state",
-        STATE_NEW,
+    current_state = (
+        state_result.get(
+            "state",
+            STATE_NEW,
+        )
     )
 
-    previous_state = state_result.get(
-        "previous_state"
+    previous_state = (
+        state_result.get(
+            "previous_state"
+        )
     )
 
     history = _safe_history(
-        state_result.get("history")
+        state_result.get(
+            "history"
+        )
     )
 
-    if not _is_known_state(current_state):
+    if not _is_known_state(
+        current_state
+    ):
+
         current_state = STATE_NEW
 
-    if not _is_known_state(next_state):
+    if not _is_known_state(
+        next_state
+    ):
+
         return {
-            "portfolio": portfolio,
-            "state": current_state,
-            "previous_state": previous_state,
-            "history": history,
-            "is_terminal": current_state in TERMINAL_STATES,
-            "is_valid_transition": False,
+
+            "portfolio":
+                portfolio,
+
+            "state":
+                current_state,
+
+            "previous_state":
+                previous_state,
+
+            "history":
+                history,
+
+            "is_terminal":
+                current_state
+                in TERMINAL_STATES,
+
+            "is_valid_transition":
+                False,
+
         }
 
     if not _is_valid_transition(
         current_state,
         next_state,
     ):
+
         return {
-            "portfolio": portfolio,
-            "state": current_state,
-            "previous_state": previous_state,
-            "history": history,
-            "is_terminal": current_state in TERMINAL_STATES,
-            "is_valid_transition": False,
+
+            "portfolio":
+                portfolio,
+
+            "state":
+                current_state,
+
+            "previous_state":
+                previous_state,
+
+            "history":
+                history,
+
+            "is_terminal":
+                current_state
+                in TERMINAL_STATES,
+
+            "is_valid_transition":
+                False,
+
         }
 
-    updated_history = history + [
-        _history_entry(
-            previous_state=current_state,
-            state=next_state,
-        )
-    ]
+    updated_history = (
+        history
+        + [
+            _history_entry(
+                previous_state=current_state,
+                state=next_state,
+            )
+        ]
+    )
 
     return {
-        "portfolio": portfolio,
-        "state": next_state,
-        "previous_state": current_state,
-        "history": updated_history,
-        "is_terminal": next_state in TERMINAL_STATES,
-        "is_valid_transition": True,
+
+        "portfolio":
+            portfolio,
+
+        "state":
+            next_state,
+
+        "previous_state":
+            current_state,
+
+        "history":
+            updated_history,
+
+        "is_terminal":
+            next_state
+            in TERMINAL_STATES,
+
+        "is_valid_transition":
+            True,
+
     }
 
 
@@ -417,7 +581,8 @@ def can_transition(
     next_state: Any,
 ) -> bool:
     """
-    Public helper for checking whether a transition is valid.
+    Public helper for checking whether
+    a transition is valid.
     """
 
     return _is_valid_transition(
@@ -430,10 +595,14 @@ def is_terminal_state(
     state: Any,
 ) -> bool:
     """
-    Check whether a lifecycle state is terminal.
+    Check whether a lifecycle state
+    is terminal.
     """
 
-    return state in TERMINAL_STATES
+    return (
+        state
+        in TERMINAL_STATES
+    )
 
 
 def get_available_transitions(
@@ -445,11 +614,17 @@ def get_available_transitions(
     Unknown states return an empty list.
     """
 
-    if not _is_known_state(state):
+    if not _is_known_state(
+        state
+    ):
+
         return []
 
     return sorted(
-        STATE_TRANSITIONS.get(state, set())
+        STATE_TRANSITIONS.get(
+            state,
+            set(),
+        )
     )
 
 
@@ -535,11 +710,63 @@ def risk_failed(
     )
 
 
+def start_governing(
+    state_result: Any,
+) -> Dict[str, Any]:
+    """
+    DECISION_CHECK -> GOVERNING
+
+    New governance lifecycle path.
+    """
+
+    return transition_portfolio_state(
+        state_result,
+        STATE_GOVERNING,
+    )
+
+
+def governance_passed(
+    state_result: Any,
+) -> Dict[str, Any]:
+    """
+    GOVERNING -> APPROVED
+    """
+
+    return transition_portfolio_state(
+        state_result,
+        STATE_APPROVED,
+    )
+
+
+def governance_failed(
+    state_result: Any,
+) -> Dict[str, Any]:
+    """
+    GOVERNING -> BLOCKED
+    """
+
+    return transition_portfolio_state(
+        state_result,
+        STATE_BLOCKED,
+    )
+
+
 def decision_passed(
     state_result: Any,
 ) -> Dict[str, Any]:
     """
+    Backward compatible convenience path.
+
     DECISION_CHECK -> APPROVED
+
+    Existing lifecycle users expect a
+    successful decision to immediately
+    approve the portfolio.
+
+    New governance-aware flows should use:
+
+        start_governing()
+        governance_passed()
     """
 
     return transition_portfolio_state(
@@ -558,6 +785,22 @@ def decision_failed(
     return transition_portfolio_state(
         state_result,
         STATE_BLOCKED,
+    )
+
+
+def approve_portfolio(
+    state_result: Any,
+) -> Dict[str, Any]:
+    """
+    GOVERNING -> APPROVED.
+
+    Backward compatibility is also supported
+    for DECISION_CHECK -> APPROVED.
+    """
+
+    return transition_portfolio_state(
+        state_result,
+        STATE_APPROVED,
     )
 
 
@@ -617,7 +860,8 @@ def block_portfolio(
     state_result: Any,
 ) -> Dict[str, Any]:
     """
-    Transition the portfolio to BLOCKED when allowed.
+    Transition portfolio to BLOCKED
+    when allowed.
     """
 
     return transition_portfolio_state(
@@ -671,3 +915,84 @@ def initialize_portfolio_state(
         portfolio=portfolio,
         state=STATE_NEW,
     )
+
+
+# ==========================================================
+# PUBLIC API
+# ==========================================================
+
+__all__ = [
+
+    "VERSION",
+
+    "STATE_NEW",
+    "STATE_VALIDATING",
+    "STATE_VALIDATED",
+    "STATE_RISK_CHECK",
+    "STATE_DECISION_CHECK",
+    "STATE_GOVERNING",
+    "STATE_APPROVED",
+    "STATE_ACTIVE",
+    "STATE_WARNING",
+    "STATE_REBALANCING",
+    "STATE_BLOCKED",
+    "STATE_REJECTED",
+
+    "TERMINAL_STATES",
+
+    "REQUIRED_STATE_KEYS",
+
+    "STATE_TRANSITIONS",
+
+    "required_state_keys",
+
+    "create_portfolio_state",
+    "transition_portfolio_state",
+
+    "can_transition",
+
+    "is_terminal_state",
+
+    "get_available_transitions",
+
+    "start_validation",
+
+    "validation_passed",
+
+    "validation_failed",
+
+    "start_risk_check",
+
+    "risk_passed",
+
+    "risk_failed",
+
+    "start_governing",
+
+    "governance_passed",
+
+    "governance_failed",
+
+    "decision_passed",
+
+    "decision_failed",
+
+    "approve_portfolio",
+
+    "activate_portfolio",
+
+    "set_warning",
+
+    "start_rebalancing",
+
+    "rebalancing_completed",
+
+    "block_portfolio",
+
+    "create_state",
+
+    "transition_state",
+
+    "initialize_portfolio_state",
+
+]
