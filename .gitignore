@@ -192,3 +192,6 @@ dist/
 # ============================================================
 # Source Python tetap dilacak Git.
 # Aturan di atas hanya mengabaikan generated/local artifacts.
+# Local backup files
+*.backup
+*.bak
