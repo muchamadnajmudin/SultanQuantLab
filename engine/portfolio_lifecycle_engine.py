@@ -104,6 +104,62 @@ except ImportError:
 
 
 # ============================================================
+# PORTFOLIO STATE ENGINE
+# ============================================================
+
+try:
+
+    from engine.portfolio_state_engine import (
+
+        create_portfolio_state,
+
+        start_validation,
+
+        validation_passed,
+
+        validation_failed,
+
+        start_risk_check,
+
+        risk_passed,
+
+        risk_failed,
+
+        start_governing,
+
+        governance_passed,
+
+        governance_failed,
+
+        set_warning,
+
+    )
+
+except ImportError:
+
+    create_portfolio_state = None
+
+    start_validation = None
+
+    validation_passed = None
+
+    validation_failed = None
+
+    start_risk_check = None
+
+    risk_passed = None
+
+    risk_failed = None
+
+    start_governing = None
+
+    governance_passed = None
+
+    governance_failed = None
+
+    set_warning = None
+
+# ============================================================
 # LIFECYCLE STATUS
 # ============================================================
 
@@ -1355,316 +1411,205 @@ def run_portfolio_lifecycle(
     portfolio,
 ):
     """
-    Run Portfolio Lifecycle safely.
+    Run Portfolio Lifecycle safely with State Engine integration.
 
-    Public result contract remains stable.
-
-    The caller-owned portfolio is never modified.
+    The public lifecycle contract and legacy behavior are preserved. The
+    State Engine is used internally to track lifecycle transitions, while
+    validation/governance remain the authoritative business gates.
     """
+    safe_portfolio = _safe_dict(portfolio)
+    history = [STATUS_NEW, STATUS_VALIDATING]
 
-    safe_portfolio = _safe_dict(
-        portfolio
-    )
+    # State Engine is intentionally treated as an internal lifecycle
+    # transition layer. If it is unavailable or a transition fails, the
+    # legacy lifecycle behavior remains authoritative.
+    state_engine_state = {}
 
-    history = [
-
-        STATUS_NEW,
-
-        STATUS_VALIDATING,
-
-    ]
-
-    # ========================================================
-    # VALIDATION
-    # ========================================================
-
-    try:
-
-        validation_result = (
-            validate_portfolio(
-                _safe_dict(
-                    safe_portfolio
+    if callable(create_portfolio_state):
+        try:
+            state_engine_state = _safe_dict(
+                create_portfolio_state(
+                    portfolio=_safe_dict(safe_portfolio),
+                    state=STATUS_NEW,
                 )
             )
-        )
+        except Exception:
+            state_engine_state = {}
 
+    def _transition(state_result, transition_fn):
+        if not state_result or not callable(transition_fn):
+            return state_result
+        try:
+            next_result = transition_fn(state_result)
+            if isinstance(next_result, dict):
+                return _safe_dict(next_result)
+        except Exception:
+            pass
+        return state_result
+
+    state_engine_state = _transition(
+        state_engine_state,
+        start_validation,
+    )
+
+    # --------------------------------------------------------
+    # VALIDATION GATE
+    # --------------------------------------------------------
+    try:
+        validation_result = validate_portfolio(safe_portfolio)
     except Exception as exc:
-
         validation_result = {
-
-            "valid":
-                False,
-
-            "reasons": [
-
-                (
-                    "Portfolio validation failed: "
-                    f"{exc}"
-                )
-
-            ],
-
-            "warnings":
-                [],
-
+            "valid": False,
+            "approved": False,
+            "blocked": True,
+            "warnings": [],
+            "reasons": [str(exc)],
         }
 
-    validation = _normalize_validation(
-        validation_result
-    )
+    validation = _normalize_validation(validation_result)
 
-    validation_warnings = _safe_list(
-        validation.get(
-            "warnings",
-            [],
+    if not validation["valid"]:
+        state_engine_state = _transition(
+            state_engine_state,
+            validation_failed,
         )
-    )
-
-    validation_reasons = _safe_list(
-        validation.get(
-            "reasons",
-            [],
-        )
-    )
-
-    if not validation.get(
-        "valid",
-        False,
-    ):
-
-        history.append(
-            STATUS_BLOCKED
-        )
-
+        history.append(STATUS_BLOCKED)
         return _build_result(
-
             status=STATUS_BLOCKED,
-
             approved=False,
-
             blocked=True,
-
             portfolio=safe_portfolio,
-
             validation=validation,
-
             governance={},
-
             history=history,
-
-            warnings=validation_warnings,
-
-            reasons=validation_reasons,
-
+            warnings=validation["warnings"],
+            reasons=validation["reasons"],
         )
 
-    # ========================================================
-    # VALIDATED
-    # ========================================================
-
-    history.append(
-        STATUS_VALIDATED
+    state_engine_state = _transition(
+        state_engine_state,
+        validation_passed,
     )
+    history.append(STATUS_VALIDATED)
 
-    # ========================================================
-    # RISK CHECK
-    # ========================================================
-
-    history.append(
-        STATUS_RISK_CHECK
+    state_engine_state = _transition(
+        state_engine_state,
+        start_risk_check,
     )
+    history.append(STATUS_RISK_CHECK)
+    history.append(STATUS_DECISION_CHECK)
 
-    # ========================================================
-    # DECISION CHECK
-    # ========================================================
-
-    history.append(
-        STATUS_DECISION_CHECK
-    )
-
-    # ========================================================
-    # GOVERNANCE
-    # ========================================================
-
+    # --------------------------------------------------------
+    # GOVERNANCE / RISK / DECISION GATE
+    # --------------------------------------------------------
     try:
-
-        governance_result = (
-            govern_portfolio(
-                _safe_dict(
-                    safe_portfolio
-                )
-            )
-        )
-
+        governance_result = govern_portfolio(safe_portfolio)
     except Exception as exc:
-
         governance_result = {
-
-            "approved":
-                False,
-
-            "blocked":
-                True,
-
-            "warnings":
-                [],
-
-            "reasons": [
-
-                (
-                    "Portfolio governance failed: "
-                    f"{exc}"
-                )
-
-            ],
-
+            "approved": False,
+            "blocked": True,
+            "warnings": [],
+            "reasons": [str(exc)],
         }
 
-    governance = _normalize_governance(
-        governance_result
-    )
+    governance = _normalize_governance(governance_result)
 
-    warnings = []
+    warnings = _safe_list(validation.get("warnings"))
+    warnings.extend(_safe_list(governance.get("warnings")))
 
-    reasons = []
+    unique_warnings = []
+    for item in warnings:
+        _append_unique(unique_warnings, item)
+    warnings = unique_warnings
 
-    for item in validation_warnings:
+    reasons = _safe_list(validation.get("reasons"))
+    reasons.extend(_safe_list(governance.get("reasons")))
 
-        _append_unique(
-            warnings,
-            item,
+    unique_reasons = []
+    for item in reasons:
+        _append_unique(unique_reasons, item)
+    reasons = unique_reasons
+
+    governance_blocked = _safe_bool(governance.get("blocked"))
+    governance_approved = _safe_bool(governance.get("approved"))
+
+    if governance_blocked or not governance_approved:
+        # The legacy lifecycle has already represented the decision stage in
+        # its public history. Internally we now advance through the State
+        # Engine to GOVERNING and close the lifecycle as BLOCKED.
+        state_engine_state = _transition(
+            state_engine_state,
+            risk_passed,
+        )
+        state_engine_state = _transition(
+            state_engine_state,
+            start_governing,
+        )
+        state_engine_state = _transition(
+            state_engine_state,
+            governance_failed,
         )
 
-    for item in validation_reasons:
-
-        _append_unique(
-            reasons,
-            item,
-        )
-
-    for item in _safe_list(
-        governance.get(
-            "warnings",
-            [],
-        )
-    ):
-
-        _append_unique(
-            warnings,
-            item,
-        )
-
-    for item in _safe_list(
-        governance.get(
-            "reasons",
-            [],
-        )
-    ):
-
-        _append_unique(
-            reasons,
-            item,
-        )
-
-    # ========================================================
-    # BLOCKED
-    # ========================================================
-
-    if governance.get(
-        "blocked",
-        False,
-    ) or not governance.get(
-        "approved",
-        False,
-    ):
-
-        history.append(
-            STATUS_BLOCKED
-        )
-
+        history.append(STATUS_BLOCKED)
         return _build_result(
-
             status=STATUS_BLOCKED,
-
             approved=False,
-
             blocked=True,
-
             portfolio=safe_portfolio,
-
             validation=validation,
-
             governance=governance,
-
             history=history,
-
             warnings=warnings,
-
             reasons=reasons,
-
         )
 
-    # ========================================================
-    # WARNING
-    # ========================================================
+    # Approved governance means the upstream risk/decision gates have also
+    # passed from the lifecycle's point of view.
+    state_engine_state = _transition(
+        state_engine_state,
+        risk_passed,
+    )
+    state_engine_state = _transition(
+        state_engine_state,
+        start_governing,
+    )
+    state_engine_state = _transition(
+        state_engine_state,
+        governance_passed,
+    )
 
     if warnings:
-
-        history.append(
-            STATUS_WARNING
+        state_engine_state = _transition(
+            state_engine_state,
+            set_warning,
         )
-
+        history.append(STATUS_WARNING)
         return _build_result(
-
             status=STATUS_WARNING,
-
             approved=True,
-
             blocked=False,
-
             portfolio=safe_portfolio,
-
             validation=validation,
-
             governance=governance,
-
             history=history,
-
             warnings=warnings,
-
             reasons=reasons,
-
         )
 
-    # ========================================================
-    # APPROVED
-    # ========================================================
-
-    history.append(
-        STATUS_APPROVED
-    )
-
+    history.append(STATUS_APPROVED)
     return _build_result(
-
         status=STATUS_APPROVED,
-
         approved=True,
-
         blocked=False,
-
         portfolio=safe_portfolio,
-
         validation=validation,
-
         governance=governance,
-
         history=history,
-
         warnings=warnings,
-
         reasons=reasons,
-
     )
+
+
 
 
 # ============================================================
