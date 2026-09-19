@@ -414,6 +414,144 @@ def test_portfolio_risk_blocks_live():
     )
 
 
+
+
+def test_failed_strategy_is_not_selected_as_best_strategy():
+
+    result = evaluate_decision(
+
+        _risk(
+            status="LOW",
+
+            wfo={
+                "stability_score": 90,
+                "wfo_robustness_score": 95,
+                "overfitting_risk": "LOW",
+            },
+
+            monte_carlo={
+                "risk_level": "LOW",
+                "robustness_score": 95,
+            },
+        ),
+
+        [
+            _strategy(
+                pf=5.0,
+                score=100,
+                name="failed_strategy",
+                status="FAILED",
+            ),
+
+            _strategy(
+                pf=2.5,
+                score=90,
+                name="valid_strategy",
+                status="SUCCESS",
+            ),
+        ],
+
+    )
+
+    assert (
+        result["best_strategy"]
+        == "valid_strategy"
+    )
+
+
+def test_insufficient_strategy_is_not_selected_as_best_strategy():
+
+    result = evaluate_decision(
+
+        _risk(
+            status="LOW",
+
+            wfo={
+                "stability_score": 90,
+                "wfo_robustness_score": 95,
+                "overfitting_risk": "LOW",
+            },
+
+            monte_carlo={
+                "risk_level": "LOW",
+                "robustness_score": 95,
+            },
+        ),
+
+        [
+            _strategy(
+                pf=5.0,
+                score=100,
+                name="insufficient_strategy",
+                status="INSUFFICIENT_DATA",
+            ),
+
+            _strategy(
+                pf=2.5,
+                score=90,
+                name="valid_strategy",
+                status="SUCCESS",
+            ),
+        ],
+
+    )
+
+    assert (
+        result["best_strategy"]
+        == "valid_strategy"
+    )
+
+
+def test_successful_strategy_ranking_is_preserved():
+
+    result = evaluate_decision(
+
+        _risk(
+            status="LOW",
+
+            wfo={
+                "stability_score": 90,
+                "wfo_robustness_score": 95,
+                "overfitting_risk": "LOW",
+            },
+
+            monte_carlo={
+                "risk_level": "LOW",
+                "robustness_score": 95,
+            },
+        ),
+
+        [
+            _strategy(
+                pf=3.0,
+                score=90,
+                name="lower_score",
+                status="SUCCESS",
+            ),
+
+            _strategy(
+                pf=2.5,
+                score=95,
+                name="higher_score",
+                status="SUCCESS",
+            ),
+
+            _strategy(
+                pf=4.0,
+                score=90,
+                name="same_score_higher_pf",
+                status="SUCCESS",
+            ),
+        ],
+
+    )
+
+    assert (
+        result["best_strategy"]
+        == "higher_score"
+    )
+
+
 def test_multiple_failed_gates_are_reported():
 
     result = evaluate_decision(

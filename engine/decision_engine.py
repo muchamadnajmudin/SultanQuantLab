@@ -272,12 +272,15 @@ def _select_best_strategy(
     results,
 ):
     """
-    Select the strongest available strategy.
+    Select the strongest successfully evaluated strategy.
 
     Ranking:
 
         1. Strategy score
         2. Profit factor
+
+    FAILED and INSUFFICIENT_DATA strategies are never eligible
+    for best-strategy selection.
 
     Existing strategy result structures are preserved.
     """
@@ -290,6 +293,12 @@ def _select_best_strategy(
             item,
             dict,
         ):
+
+            continue
+
+        if item.get(
+            "evaluation_status"
+        ) != "SUCCESS":
 
             continue
 
@@ -319,6 +328,7 @@ def _select_best_strategy(
             ),
         ),
     )
+
 
 
 # ==================================================
