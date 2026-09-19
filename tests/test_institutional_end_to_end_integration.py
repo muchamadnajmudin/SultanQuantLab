@@ -236,3 +236,30 @@ def test_complete_pipeline_preserves_existing_public_outputs(monkeypatch):
     assert required_keys.issubset(result.keys())
     assert result["strategy_name"] == "xau_strategy"
     assert result["decision"] == final_decision
+
+from engine.portfolio_engine import get_best_strategy
+
+
+def test_no_success_strategy_never_becomes_best():
+    results = [
+        {
+            "name": "failed_strategy",
+            "evaluation_status": "FAILED",
+            "score": 99.0,
+        },
+        {
+            "name": "insufficient_strategy",
+            "evaluation_status": "INSUFFICIENT_DATA",
+            "score": 98.0,
+        },
+    ]
+
+    assert get_best_strategy(results) is None
+
+
+def test_no_best_strategy_preserves_default_strategy_fallback():
+    assert (
+        institutional._resolve_strategy_name(None)
+        == institutional.DEFAULT_STRATEGY
+    )
+
