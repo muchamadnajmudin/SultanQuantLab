@@ -194,6 +194,79 @@ def test_weak_strategy_receives_no_allocation():
     assert "weak" not in names
 
 
+
+# ============================================================
+# NO PRIMARY QUALITY CANDIDATE
+# ============================================================
+
+def test_no_primary_quality_candidate_receives_allocation():
+
+    results = [
+
+        {
+            "name": "weak_pf",
+
+            "evaluation_status":
+                "SUCCESS",
+
+            "score": 80,
+
+            "statistics": {
+
+                "profit_factor": 0.8,
+
+                "expectancy": 1.0,
+
+            },
+
+        },
+
+        {
+            "name": "weak_score",
+
+            "evaluation_status":
+                "SUCCESS",
+
+            "score": 10,
+
+            "statistics": {
+
+                "profit_factor": 1.5,
+
+                "expectancy": 1.0,
+
+            },
+
+        },
+
+        {
+            "name": "weak_expectancy",
+
+            "evaluation_status":
+                "SUCCESS",
+
+            "score": 80,
+
+            "statistics": {
+
+                "profit_factor": 1.5,
+
+                "expectancy": -1.0,
+
+            },
+
+        },
+
+    ]
+
+    allocation = build_allocation(
+        results,
+        regime="TRENDING",
+    )
+
+    assert allocation == []
+
+
 # ============================================================
 # MEMORY IS REGIME SPECIFIC
 # ============================================================
