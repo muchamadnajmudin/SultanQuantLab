@@ -1,4 +1,4 @@
-﻿"""
+"""
 ==========================================
 SULTAN QUANT OS
 Institutional Engine
@@ -25,6 +25,7 @@ Institutional portfolio orchestration is owned by:
 
     engine.institutional_portfolio_engine
 """
+import inspect
 
 from pathlib import Path
 
@@ -961,10 +962,50 @@ def execute_pipeline(
         else {}
     )
 
-    decision = evaluate_decision(
-        final_risk,
-        strategy_results,
+    # Preserve compatibility with legacy / monkeypatched
+    # Decision Engine implementations that still expose:
+    #
+    #     evaluate_decision(risk, results)
+    #
+    # while using the allocation-aware API whenever supported.
+    allocation = (
+        portfolio_result.get(
+            "allocation",
+        )
+        if isinstance(
+            portfolio_result,
+            dict,
+        )
+        else None
     )
+
+    decision_parameters = inspect.signature(
+        evaluate_decision
+    ).parameters
+
+    supports_allocation = (
+        "allocation" in decision_parameters
+        or any(
+            parameter.kind
+            == inspect.Parameter.VAR_KEYWORD
+            for parameter in decision_parameters.values()
+        )
+    )
+
+    if supports_allocation:
+
+        decision = evaluate_decision(
+            final_risk,
+            strategy_results,
+            allocation=allocation,
+        )
+
+    else:
+
+        decision = evaluate_decision(
+            final_risk,
+            strategy_results,
+        )
 
     # Keep the portfolio result contract backward compatible
     # while replacing its preliminary decision with the true

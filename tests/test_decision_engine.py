@@ -156,6 +156,208 @@ def test_institutional_gate_passes():
     )
 
 
+def test_allocation_gate_blocks_when_no_strategy_is_allocatable():
+
+    result = evaluate_decision(
+
+        _risk(
+
+            status="LOW",
+
+            wfo={
+
+                "stability_score":
+                    85,
+
+                "wfo_robustness_score":
+                    95,
+
+                "overfitting_risk":
+                    "LOW",
+
+            },
+
+            monte_carlo={
+
+                "risk_level":
+                    "LOW",
+
+                "robustness_score":
+                    95,
+
+            },
+
+        ),
+
+        [
+
+            _strategy(
+                pf=2.5,
+                drawdown=10,
+                score=90,
+            )
+
+        ],
+
+        allocation=[],
+
+    )
+
+    assert (
+        result["decision"]
+        == "NEEDS OPTIMIZATION"
+    )
+
+    assert (
+        result["live_ready"]
+        is False
+    )
+
+    assert (
+        result["gate_results"]["allocation"]
+        is False
+    )
+
+    assert (
+        "No allocatable strategy available"
+        in result["failed_gates"]
+    )
+
+
+def test_allocation_gate_passes_with_allocatable_strategy():
+
+    result = evaluate_decision(
+
+        _risk(
+
+            status="LOW",
+
+            wfo={
+
+                "stability_score":
+                    85,
+
+                "wfo_robustness_score":
+                    95,
+
+                "overfitting_risk":
+                    "LOW",
+
+            },
+
+            monte_carlo={
+
+                "risk_level":
+                    "LOW",
+
+                "robustness_score":
+                    95,
+
+            },
+
+        ),
+
+        [
+
+            _strategy(
+                pf=2.5,
+                drawdown=10,
+                score=90,
+            )
+
+        ],
+
+        allocation=[
+
+            {
+                "name":
+                    "test_strategy",
+
+                "allocation":
+                    1.0,
+            }
+
+        ],
+
+    )
+
+    assert (
+        result["decision"]
+        == "APPROVED"
+    )
+
+    assert (
+        result["live_ready"]
+        is True
+    )
+
+    assert (
+        result["gate_results"]["allocation"]
+        is True
+    )
+
+
+def test_legacy_decision_without_allocation_remains_compatible():
+
+    result = evaluate_decision(
+
+        _risk(
+
+            status="LOW",
+
+            wfo={
+
+                "stability_score":
+                    85,
+
+                "wfo_robustness_score":
+                    95,
+
+                "overfitting_risk":
+                    "LOW",
+
+            },
+
+            monte_carlo={
+
+                "risk_level":
+                    "LOW",
+
+                "robustness_score":
+                    95,
+
+            },
+
+        ),
+
+        [
+
+            _strategy(
+                pf=2.5,
+                drawdown=10,
+                score=90,
+            )
+
+        ],
+
+    )
+
+    assert (
+        result["decision"]
+        == "APPROVED"
+    )
+
+    assert (
+        result["live_ready"]
+        is True
+    )
+
+    assert (
+        result["gate_results"]["allocation"]
+        is True
+    )
+
+
 def test_profit_factor_blocks_live():
 
     result = evaluate_decision(

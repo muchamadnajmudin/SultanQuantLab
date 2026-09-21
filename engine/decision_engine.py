@@ -798,6 +798,7 @@ def _evaluate_institutional_gate(
     wfo,
     monte_carlo,
     qualified_strategies,
+    allocation=None,
 ):
     """
     Evaluate ALL institutional gates.
@@ -1009,6 +1010,80 @@ def _evaluate_institutional_gate(
         )
 
     # ==================================================
+    # ALLOCATION
+    #
+    # Optional institutional gate.
+    #
+    # allocation=None means the caller is using the
+    # legacy evaluate_decision(risk, results) API.
+    #
+    # allocation=[] explicitly means that no strategy
+    # passed the capital-allocation quality gate.
+    # ==================================================
+
+    if allocation is None:
+
+        allocation_pass = True
+
+    elif isinstance(
+        allocation,
+        dict,
+    ):
+
+        allocation_pass = (
+            len(allocation) > 0
+            and sum(
+                _safe_float(value)
+                for value in allocation.values()
+            ) > 0
+        )
+
+    elif isinstance(
+        allocation,
+        list,
+    ):
+
+        allocation_pass = False
+
+        for item in allocation:
+
+            if not isinstance(
+                item,
+                dict,
+            ):
+
+                continue
+
+            weight = _safe_float(
+                item.get(
+                    "allocation",
+                    item.get(
+                        "weight",
+                        item.get(
+                            "weight_pct",
+                            0,
+                        ),
+                    ),
+                )
+            )
+
+            if weight > 0:
+
+                allocation_pass = True
+
+                break
+
+    else:
+
+        allocation_pass = False
+
+    if not allocation_pass:
+
+        failures.append(
+            "No allocatable strategy available"
+        )
+
+    # ==================================================
     # FINAL GATE
     # ==================================================
 
@@ -1078,6 +1153,9 @@ def _evaluate_institutional_gate(
 
             "qualified_strategy":
                 strategy_pass,
+
+            "allocation":
+                allocation_pass,
 
         },
 
@@ -1159,6 +1237,7 @@ def _no_strategy_result(
 def evaluate_decision(
     risk,
     results,
+    allocation=None,
 ):
     """
     Evaluate final institutional portfolio decision.
@@ -1306,6 +1385,8 @@ def evaluate_decision(
         monte_carlo=monte_carlo,
 
         qualified_strategies=qualified_strategies,
+
+        allocation=allocation,
     )
 
     # ==================================================

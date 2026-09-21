@@ -905,6 +905,7 @@ def _safe_calculate_portfolio_risk(
 def _safe_evaluate_decision(
     risk,
     results,
+    allocation=None,
 ):
 
     try:
@@ -912,7 +913,27 @@ def _safe_evaluate_decision(
         decision = evaluate_decision(
             risk,
             results,
+            allocation=allocation,
         )
+
+    except TypeError:
+
+        # Backward compatibility for legacy callers,
+        # monkeypatched tests, and legacy Decision Engine
+        # implementations that still accept only:
+        #
+        #     evaluate_decision(risk, results)
+
+        try:
+
+            decision = evaluate_decision(
+                risk,
+                results,
+            )
+
+        except Exception:
+
+            return {}
 
     except Exception:
 
@@ -1105,6 +1126,7 @@ def build_institutional_portfolio(
     decision = _safe_evaluate_decision(
         risk,
         results,
+        allocation=allocation,
     )
 
 

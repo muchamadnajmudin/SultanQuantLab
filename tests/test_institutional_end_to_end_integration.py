@@ -240,6 +240,78 @@ def test_complete_pipeline_preserves_existing_public_outputs(monkeypatch):
 from engine.portfolio_engine import get_best_strategy
 
 
+
+def test_empty_allocation_blocks_final_institutional_approval(monkeypatch):
+    """
+    Regression:
+    an institutional pipeline with no allocatable strategy must not
+    receive an APPROVED final decision.
+    """
+
+    import engine.institutional_engine as institutional
+
+    captured = {}
+
+    def decision_spy(
+        risk,
+        results,
+        allocation=None,
+    ):
+        captured["allocation"] = allocation
+
+        from engine.decision_engine import evaluate_decision
+
+        return evaluate_decision(
+            risk,
+            results,
+            allocation=allocation,
+        )
+
+    _patch_pipeline(
+        monkeypatch,
+        decision_spy,
+    )
+
+    # Preserve the normal patched portfolio structure but explicitly
+    # remove all capital allocation candidates.
+    original_portfolio_builder = (
+        institutional._run_portfolio_from_dataframe
+    )
+
+    def portfolio_without_allocation(df):
+        portfolio_result = original_portfolio_builder(df)
+
+        portfolio_result = dict(
+            portfolio_result
+        )
+
+        portfolio_result["allocation"] = []
+
+        return portfolio_result
+
+    monkeypatch.setattr(
+        institutional,
+        "_run_portfolio_from_dataframe",
+        portfolio_without_allocation,
+    )
+
+    result = institutional.execute_pipeline(
+        "dummy.csv"
+    )
+
+    assert captured["allocation"] == []
+
+    assert (
+        result["decision"]["decision"]
+        != "APPROVED"
+    )
+
+    assert (
+        "No allocatable strategy available"
+        in result["decision"]["failed_gates"]
+    )
+
+
 def test_no_success_strategy_never_becomes_best():
     results = [
         {
