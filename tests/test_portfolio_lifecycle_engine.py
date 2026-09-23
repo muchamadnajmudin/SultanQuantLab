@@ -529,3 +529,100 @@ def test_lifecycle_status_constants():
     assert lifecycle.STATUS_ACTIVE == "ACTIVE"
     assert lifecycle.STATUS_WARNING == "WARNING"
     assert lifecycle.STATUS_BLOCKED == "BLOCKED"
+# ============================================================
+# REGRESSION TESTS — GOVERNANCE/LIFECYCLE HARDENING
+# ============================================================
+
+def test_validation_rejection_cannot_be_bypassed(monkeypatch):
+
+    monkeypatch.setattr(
+        lifecycle,
+        "validate_portfolio",
+        lambda portfolio: {
+            "valid": False,
+            "reasons": ["Validation must block"],
+            "warnings": [],
+        },
+    )
+
+    result = lifecycle.run_portfolio_lifecycle(
+        build_valid_portfolio()
+    )
+
+    assert result["blocked"] is True
+    assert result["approved"] is False
+    assert result["status"] == lifecycle.STATUS_BLOCKED
+    assert "Validation must block" in result["reasons"]
+
+
+def test_governance_rejection_cannot_be_bypassed(monkeypatch):
+
+    monkeypatch.setattr(
+        lifecycle,
+        "validate_portfolio",
+        lambda portfolio: {
+            "valid": True,
+            "reasons": [],
+            "warnings": [],
+        },
+    )
+
+    monkeypatch.setattr(
+        lifecycle,
+        "govern_portfolio",
+        lambda portfolio: {
+            "approved": False,
+            "blocked": True,
+            "warnings": [],
+            "reasons": ["Governance must block"],
+        },
+    )
+
+    result = lifecycle.run_portfolio_lifecycle(
+        build_valid_portfolio()
+    )
+
+    assert result["blocked"] is True
+    assert result["approved"] is False
+    assert result["status"] == lifecycle.STATUS_BLOCKED
+    assert "Governance must block" in result["reasons"]
+
+
+def test_warning_public_status_matches_state(monkeypatch):
+
+    monkeypatch.setattr(
+        lifecycle,
+        "validate_portfolio",
+        lambda portfolio: {
+            "valid": True,
+            "reasons": [],
+            "warnings": [],
+        },
+    )
+
+    monkeypatch.setattr(
+        lifecycle,
+        "govern_portfolio",
+        lambda portfolio: {
+            "approved": True,
+            "blocked": False,
+            "warnings": ["Risk warning"],
+            "reasons": [],
+        },
+    )
+
+    result = lifecycle.run_portfolio_lifecycle(
+        build_valid_portfolio()
+    )
+
+    assert result["status"] == lifecycle.STATUS_WARNING
+
+    state = result["state"]
+
+    current_state = (
+        state.get("current_state")
+        or state.get("state")
+        or state.get("status")
+    )
+
+    assert current_state == lifecycle.STATUS_WARNING

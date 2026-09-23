@@ -1123,3 +1123,73 @@ def test_status_constants():
     assert governance.STATUS_WARNING == "WARNING"
 
     assert governance.STATUS_REJECTED == "REJECTED"
+
+
+def test_decision_receives_fresh_risk_result(monkeypatch):
+
+    portfolio = build_portfolio()
+
+    stale_risk = {
+        "approved": False,
+        "risk_score": 99.0,
+    }
+
+    fresh_risk = {
+        "valid": True,
+        "approved": True,
+        "risk_score": 10.0,
+        "warnings": [],
+        "errors": [],
+    }
+
+    monkeypatch.setattr(
+        governance,
+        "validate_institutional_portfolio",
+        lambda portfolio: {
+            "valid": True,
+            "errors": [],
+            "warnings": [],
+        },
+    )
+
+    monkeypatch.setattr(
+        governance,
+        "calculate_portfolio_risk",
+        lambda portfolio: fresh_risk,
+    )
+
+    captured = {}
+
+    def capture_decision(portfolio):
+
+        captured["risk"] = deepcopy(
+            portfolio.get("risk")
+        )
+
+        return {
+            "decision": "APPROVED",
+            "warnings": [],
+            "errors": [],
+        }
+
+    monkeypatch.setattr(
+        governance,
+        "make_institutional_decision",
+        capture_decision,
+    )
+
+    portfolio["risk"] = stale_risk
+
+    result = governance.run_portfolio_governance(
+        portfolio
+    )
+
+    assert result["approved"] is True
+
+    assert captured["risk"]["valid"] == fresh_risk["valid"]
+    assert captured["risk"]["risk_score"] == fresh_risk["risk_score"]
+    assert captured["risk"]["warnings"] == fresh_risk["warnings"]
+    assert captured["risk"]["errors"] == fresh_risk["errors"]
+
+    # The original risk-engine payload is preserved under raw.
+    assert captured["risk"]["raw"]["approved"] == fresh_risk["approved"]

@@ -1145,8 +1145,28 @@ def run_portfolio_governance(
         safe_portfolio
     )
 
-    decision = _run_decision(
+    # --------------------------------------------------------
+    # DECISION MUST USE FRESH RISK RESULT
+    # --------------------------------------------------------
+    #
+    # Keep the caller-owned portfolio immutable and preserve
+    # the existing one-argument decision compatibility API.
+    #
+    # The risk engine has just produced the authoritative
+    # current risk result. Inject that result into an isolated
+    # decision portfolio so the Decision Engine cannot
+    # accidentally consume stale portfolio["risk"] data.
+    #
+    decision_portfolio = deepcopy(
         safe_portfolio
+    )
+
+    decision_portfolio["risk"] = deepcopy(
+        risk
+    )
+
+    decision = _run_decision(
+        decision_portfolio
     )
 
     governance = _evaluate_governance(
