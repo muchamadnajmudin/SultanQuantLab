@@ -1,3 +1,5 @@
+import engine.decision_engine as decision_engine
+
 from engine.decision_engine import (
     evaluate_decision,
 )
@@ -794,3 +796,278 @@ def test_multiple_failed_gates_are_reported():
     assert len(
         result["failed_gates"]
     ) >= 5
+# ---------------------------------------------------------------------------
+# Decision Engine Regression / Institutional Safety Tests
+# ---------------------------------------------------------------------------
+
+def _fully_valid_risk():
+    return {
+        "status": "NORMAL",
+        "wfo": {
+            "stability_score": 80.0,
+            "robustness_score": 90.0,
+            "overfitting_risk": "LOW",
+        },
+        "monte_carlo": {
+            "risk_level": "LOW",
+            "robustness_score": 90.0,
+        },
+    }
+
+
+def _fully_valid_results():
+    return [
+        {
+            "name": "Strategy A",
+            "evaluation_status": "SUCCESS",
+            "profit_factor": 2.0,
+            "score": 100.0,
+            "statistics": {
+                "profit_factor": 2.0,
+                "max_drawdown_percent": 10.0,
+            },
+        }
+    ]
+
+
+def test_failed_strategy_never_becomes_best():
+    results = [
+        {
+            "name": "Failed",
+            "evaluation_status": "FAILED",
+            "profit_factor": 99.0,
+            "score": 999.0,
+        },
+        {
+            "name": "Successful",
+            "evaluation_status": "SUCCESS",
+            "profit_factor": 1.5,
+            "score": 50.0,
+        },
+    ]
+
+    assert decision_engine._select_best_strategy(results)["name"] == "Successful"
+
+
+def test_insufficient_strategy_never_becomes_best():
+    results = [
+        {
+            "name": "Insufficient",
+            "evaluation_status": "INSUFFICIENT_DATA",
+            "profit_factor": 99.0,
+            "score": 999.0,
+        },
+        {
+            "name": "Successful",
+            "evaluation_status": "SUCCESS",
+            "profit_factor": 1.5,
+            "score": 50.0,
+        },
+    ]
+
+    assert decision_engine._select_best_strategy(results)["name"] == "Successful"
+
+
+def test_successful_strategy_ranking_is_preserved():
+    results = [
+        {
+            "name": "Lower",
+            "evaluation_status": "SUCCESS",
+            "profit_factor": 2.0,
+            "score": 80.0,
+        },
+        {
+            "name": "Higher",
+            "evaluation_status": "SUCCESS",
+            "profit_factor": 2.0,
+            "score": 90.0,
+        },
+    ]
+
+    assert decision_engine._select_best_strategy(results)["name"] == "Higher"
+
+
+def test_institutional_gate_accepts_exact_thresholds():
+    result = decision_engine.evaluate_decision(
+        _fully_valid_risk(),
+        _fully_valid_results(),
+        allocation={"Strategy A": 1.0},
+    )
+
+    assert result["decision"] == "APPROVED"
+    assert result["live_ready"] is True
+
+
+def test_missing_institutional_evidence_blocks_decision():
+    risk = _fully_valid_risk()
+    risk["wfo"].pop("stability_score")
+
+    result = decision_engine.evaluate_decision(
+        risk,
+        _fully_valid_results(),
+        allocation={"Strategy A": 1.0},
+    )
+
+    assert result["decision"] != "APPROVED"
+
+
+def test_negative_allocation_dict_blocks_decision():
+    result = decision_engine.evaluate_decision(
+        _fully_valid_risk(),
+        _fully_valid_results(),
+        allocation={"Strategy A": -1.0},
+    )
+
+    assert result["decision"] != "APPROVED"
+
+
+def test_valid_allocation_is_accepted():
+    result = decision_engine.evaluate_decision(
+        _fully_valid_risk(),
+        _fully_valid_results(),
+        allocation={"Strategy A": 1.0},
+    )
+
+    assert result["decision"] == "APPROVED"
+
+
+def test_nan_drawdown_blocks_decision():
+    results = _fully_valid_results()
+    results[0]["statistics"]["max_drawdown_percent"] = float("nan")
+
+    result = decision_engine.evaluate_decision(
+        _fully_valid_risk(),
+        results,
+        allocation={"Strategy A": 1.0},
+    )
+
+    assert result["decision"] != "APPROVED"
+
+
+def test_infinite_drawdown_blocks_decision():
+    results = _fully_valid_results()
+    results[0]["statistics"]["max_drawdown_percent"] = float("inf")
+
+    result = decision_engine.evaluate_decision(
+        _fully_valid_risk(),
+        results,
+        allocation={"Strategy A": 1.0},
+    )
+
+    assert result["decision"] != "APPROVED"
+
+
+def test_negative_infinite_drawdown_blocks_decision():
+    results = _fully_valid_results()
+    results[0]["statistics"]["max_drawdown_percent"] = float("-inf")
+
+    result = decision_engine.evaluate_decision(
+        _fully_valid_risk(),
+        results,
+        allocation={"Strategy A": 1.0},
+    )
+
+    assert result["decision"] != "APPROVED"
+
+
+def test_nan_allocation_dict_blocks_decision():
+    result = decision_engine.evaluate_decision(
+        _fully_valid_risk(),
+        _fully_valid_results(),
+        allocation={"Strategy A": float("nan")},
+    )
+
+    assert result["decision"] != "APPROVED"
+
+
+def test_infinite_allocation_dict_blocks_decision():
+    result = decision_engine.evaluate_decision(
+        _fully_valid_risk(),
+        _fully_valid_results(),
+        allocation={"Strategy A": float("inf")},
+    )
+
+    assert result["decision"] != "APPROVED"
+
+
+def test_negative_infinite_allocation_dict_blocks_decision():
+    result = decision_engine.evaluate_decision(
+        _fully_valid_risk(),
+        _fully_valid_results(),
+        allocation={"Strategy A": float("-inf")},
+    )
+
+    assert result["decision"] != "APPROVED"
+
+
+def test_zero_allocation_blocks_decision():
+    result = decision_engine.evaluate_decision(
+        _fully_valid_risk(),
+        _fully_valid_results(),
+        allocation={"Strategy A": 0.0},
+    )
+
+    assert result["decision"] != "APPROVED"
+
+
+def test_empty_allocation_blocks_decision():
+    result = decision_engine.evaluate_decision(
+        _fully_valid_risk(),
+        _fully_valid_results(),
+        allocation={},
+    )
+
+    assert result["decision"] != "APPROVED"
+
+
+def test_negative_mixed_allocation_dict_blocks_decision():
+    result = decision_engine.evaluate_decision(
+        _fully_valid_risk(),
+        _fully_valid_results(),
+        allocation={
+            "Strategy A": 2.0,
+            "Strategy B": -1.0,
+        },
+    )
+
+    assert result["decision"] != "APPROVED"
+
+
+def test_negative_mixed_allocation_list_blocks_decision():
+    result = decision_engine.evaluate_decision(
+        _fully_valid_risk(),
+        _fully_valid_results(),
+        allocation=[
+            {"strategy": "Strategy A", "weight": 2.0},
+            {"strategy": "Strategy B", "weight": -1.0},
+        ],
+    )
+
+    assert result["decision"] != "APPROVED"
+
+
+def test_nan_mixed_allocation_list_blocks_decision():
+    result = decision_engine.evaluate_decision(
+        _fully_valid_risk(),
+        _fully_valid_results(),
+        allocation=[
+            {"strategy": "Strategy A", "weight": 1.0},
+            {"strategy": "Strategy B", "weight": float("nan")},
+        ],
+    )
+
+    assert result["decision"] != "APPROVED"
+
+
+def test_valid_multiple_nonnegative_allocation_is_accepted():
+    result = decision_engine.evaluate_decision(
+        _fully_valid_risk(),
+        _fully_valid_results(),
+        allocation=[
+            {"strategy": "Strategy A", "weight": 0.6},
+            {"strategy": "Strategy B", "weight": 0.4},
+        ],
+    )
+
+    assert result["decision"] == "APPROVED"
+    assert result["live_ready"] is True

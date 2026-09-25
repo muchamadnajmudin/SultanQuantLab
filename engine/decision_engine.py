@@ -234,15 +234,35 @@ def _get_drawdown(
         statistics
     )
 
-    return _safe_float(
+    raw_drawdown = statistics.get(
+        "max_drawdown_percent",
         statistics.get(
-            "max_drawdown_percent",
-            statistics.get(
-                "max_drawdown",
-                0,
-            ),
-        )
+            "max_drawdown",
+            0,
+        ),
     )
+
+    # Missing drawdown keeps legacy behavior.
+    if raw_drawdown is None:
+        return 0.0
+
+    try:
+        value = float(raw_drawdown)
+    except (TypeError, ValueError):
+        return float("inf")
+
+    # Invalid numeric evidence must NEVER become a
+    # passing drawdown value.
+    if value != value:
+        return float("inf")
+
+    if value == float("inf"):
+        return float("inf")
+
+    if value == float("-inf"):
+        return float("inf")
+
+    return value
 
 
 def _get_profit_factor(
@@ -1032,47 +1052,118 @@ def _evaluate_institutional_gate(
 
         allocation_pass = (
             len(allocation) > 0
-            and sum(
-                _safe_float(value)
-                for value in allocation.values()
-            ) > 0
         )
+
+        allocation_values = []
+
+        if allocation_pass:
+
+            for value in allocation.values():
+
+                try:
+                    numeric_value = float(value)
+                except (
+                    TypeError,
+                    ValueError,
+                ):
+                    allocation_pass = False
+                    break
+
+                if (
+                    numeric_value != numeric_value
+                    or numeric_value == float("inf")
+                    or numeric_value == float("-inf")
+                    or numeric_value < 0
+                ):
+                    allocation_pass = False
+                    break
+
+                allocation_values.append(
+                    numeric_value
+                )
+
+        if allocation_pass:
+
+            allocation_pass = (
+                sum(
+                    allocation_values
+                ) > 0
+            )
 
     elif isinstance(
         allocation,
         list,
     ):
 
-        allocation_pass = False
+        allocation_pass = (
+            len(allocation) > 0
+        )
 
-        for item in allocation:
+        allocation_values = []
 
-            if not isinstance(
-                item,
-                dict,
-            ):
+        if allocation_pass:
 
-                continue
+            for item in allocation:
 
-            weight = _safe_float(
-                item.get(
+                if not isinstance(
+                    item,
+                    dict,
+                ):
+
+                    allocation_pass = False
+                    break
+
+                raw_weight = item.get(
                     "allocation",
                     item.get(
                         "weight",
                         item.get(
                             "weight_pct",
-                            0,
+                            None,
                         ),
                     ),
                 )
+
+                if raw_weight is None:
+
+                    allocation_pass = False
+                    break
+
+                try:
+
+                    weight = float(
+                        raw_weight
+                    )
+
+                except (
+                    TypeError,
+                    ValueError,
+                ):
+
+                    allocation_pass = False
+                    break
+
+                if (
+                    weight != weight
+                    or weight == float("inf")
+                    or weight == float("-inf")
+                    or weight < 0
+                ):
+
+                    allocation_pass = False
+                    break
+
+                allocation_values.append(
+                    weight
+                )
+
+        if allocation_pass:
+
+            allocation_pass = (
+                sum(
+                    allocation_values
+                ) > 0
             )
-
-            if weight > 0:
-
-                allocation_pass = True
-
-                break
-
     else:
 
         allocation_pass = False
